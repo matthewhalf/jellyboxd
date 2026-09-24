@@ -105,6 +105,7 @@ export default function PlayerScreen() {
       <VideoView
         style={styles.video}
         player={player}
+        nativeControls={true}
         allowsPictureInPicture
         contentFit="contain"
       />

@@ -21,7 +21,7 @@ export default function RootLayout() {
         />
         <Stack.Screen
           name="item/[id]"
-          options={{ title: "", headerTransparent: true, headerTintColor: "#ffffff" }}
+          options={{ headerShown: false }}
         />
         <Stack.Screen
           name="player/[id]"
