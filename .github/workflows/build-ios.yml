@@ -32,31 +32,24 @@ jobs:
         with:
           bun-version: latest
 
-      - name: 🔧 Setup Xcode 26
+      - name: 🔧 Setup Xcode
         uses: maxim-lobanov/setup-xcode@v1
         with:
-          xcode-version: '26.0'
+          xcode-version: '16.4'
 
       - name: 🔍 Verify Xcode and Swift Toolchain
         run: |
           sudo xcodebuild -runFirstLaunch || true
-          sudo xcode-select -s /Applications/Xcode_26.0.app/Contents/Developer || true
-
           xcodebuild -version
           swift --version
-
-          swift --version | grep -E 'Swift version 6\.2' || {
-            echo "Expected Swift 6.2.x"
-            exit 1
-          }
-
           xcodebuild -showsdks
           SDK_PATH="$(xcrun --sdk iphoneos --show-sdk-path)"
+          echo "iPhoneOS SDK path: $SDK_PATH"
           test -d "$SDK_PATH"
 
       - name: 📦 Install Project Dependencies
         run: |
-          bun install
+          bun install --frozen-lockfile
 
       - name: ⚙️ Expo Prebuild (Generate iOS Native Project)
         run: |
