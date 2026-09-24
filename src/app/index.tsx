@@ -94,16 +94,21 @@ export default function HomeScreen() {
             </View>
             <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.horizontalList}>
               {resumeItems.map((item) => {
-                const percent = Math.round(item.UserData?.PlayedPercentage || 0);
-                const imageUrl = JellyfinService.getImageUrl(
-                  session.serverUrl,
-                  item.Id,
-                  item.Type === "Episode" ? "Thumb" : "Backdrop",
-                  450
-                );
+                const positionTicks = item.UserData?.PlaybackPositionTicks || 0;
+                const totalTicks = item.RunTimeTicks || 0;
+                const percent = totalTicks > 0
+                  ? Math.min(100, Math.round((positionTicks / totalTicks) * 100))
+                  : Math.round(item.UserData?.PlayedPercentage || 0);
+
+                const backdropId = item.ParentBackdropItemId || item.SeriesId || item.Id;
+                const imageUrl = JellyfinService.getImageUrl(session.serverUrl, backdropId, "Backdrop", 600);
 
                 let remainingText = "";
-                if (item.RunTimeTicks) {
+                if (totalTicks > 0 && positionTicks > 0) {
+                  const remainingTicks = Math.max(0, totalTicks - positionTicks);
+                  const remainingMins = Math.max(1, Math.round(remainingTicks / (10000000 * 60)));
+                  remainingText = `${remainingMins} min rimasti`;
+                } else if (item.RunTimeTicks) {
                   const remainingTicks = item.RunTimeTicks * (1 - (percent > 0 ? percent : 20) / 100);
                   const remainingMins = Math.max(1, Math.round(remainingTicks / (10000000 * 60)));
                   remainingText = `${remainingMins} min rimasti`;

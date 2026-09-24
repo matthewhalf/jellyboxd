@@ -29,6 +29,7 @@ export interface JellyfinItem {
   SeasonId?: string;
   IndexNumber?: number; // Episode number or Season number
   ParentIndexNumber?: number; // Season number
+  ParentBackdropItemId?: string;
   PremiereDate?: string;
   OfficialRating?: string;
   Genres?: string[];
@@ -193,7 +194,7 @@ export class JellyfinService {
   }
 
   static async fetchResumeItems(session: JellyfinSession): Promise<JellyfinItem[]> {
-    const url = `${session.serverUrl}/Users/${session.userId}/Items/Resume?Limit=12&Fields=Overview,RunTimeTicks,UserData,PrimaryImageAspectRatio`;
+    const url = `${session.serverUrl}/Users/${session.userId}/Items/Resume?Limit=15&Fields=Overview,RunTimeTicks,UserData,ParentBackdropItemId,SeriesId,SeriesName`;
     const res = await fetch(url, {
       headers: this.getAuthHeaders(session.token),
     });
@@ -201,38 +202,14 @@ export class JellyfinService {
     const data = await res.json();
     const rawItems: JellyfinItem[] = data.Items || [];
 
-    const resolvedItems: JellyfinItem[] = await Promise.all(
-      rawItems.map(async (item) => {
-        if (item.Type === "Season" && item.SeriesId) {
-          try {
-            const episodes = await this.fetchEpisodes(session, item.SeriesId, item.Id);
-            const nextEp = episodes.find((e) => !e.UserData?.Played) || episodes[0];
-            if (nextEp) {
-              return {
-                ...nextEp,
-                SeriesName: item.SeriesName || nextEp.SeriesName,
-                UserData: {
-                  ...nextEp.UserData,
-                  PlayedPercentage: nextEp.UserData?.PlayedPercentage || item.UserData?.PlayedPercentage || 25,
-                },
-              };
-            }
-          } catch {}
-        } else if (item.Type === "Series") {
-          try {
-            const seasons = await this.fetchSeasons(session, item.Id);
-            if (seasons.length > 0) {
-              const episodes = await this.fetchEpisodes(session, item.Id, seasons[0].Id);
-              const nextEp = episodes.find((e) => !e.UserData?.Played) || episodes[0];
-              if (nextEp) return nextEp;
-            }
-          } catch {}
-        }
-        return item;
-      })
+    // Only show episodes and movies that the user has ACTUALLY started playing (ticks > 0)
+    return rawItems.filter(
+      (item) =>
+        (item.Type === "Episode" || item.Type === "Movie") &&
+        item.UserData &&
+        (item.UserData.PlaybackPositionTicks || 0) > 0 &&
+        !item.UserData.Played
     );
-
-    return resolvedItems;
   }
 
   static async fetchLibraries(session: JellyfinSession): Promise<JellyfinItem[]> {
