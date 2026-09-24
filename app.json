@@ -3,15 +3,19 @@
     "name": "Jellyboxd",
     "slug": "jellyboxd",
     "version": "1.0.0",
-    "orientation": "portrait",
+    "orientation": "default",
     "icon": "./assets/images/icon.png",
     "scheme": "jellyboxd",
     "userInterfaceStyle": "dark",
+    "backgroundColor": "#14181c",
     "ios": {
+      "backgroundColor": "#14181c",
       "supportsTablet": true,
       "bundleIdentifier": "com.matthewhalf.jellyboxd",
       "infoPlist": {
-        "UIBackgroundModes": ["audio"],
+        "UIBackgroundModes": [
+          "audio"
+        ],
         "NSAppTransportSecurity": {
           "NSAllowsArbitraryLoads": true
         }
@@ -43,6 +47,19 @@
     ],
     "experiments": {
       "typedRoutes": true
+    },
+    "extra": {
+      "router": {},
+      "eas": {
+        "projectId": "ff5aaf39-4a4f-4c55-9789-d13673163c53"
+      }
+    },
+    "owner": "mattheeww",
+    "runtimeVersion": {
+      "policy": "appVersion"
+    },
+    "updates": {
+      "url": "https://u.expo.dev/ff5aaf39-4a4f-4c55-9789-d13673163c53"
     }
   }
 }

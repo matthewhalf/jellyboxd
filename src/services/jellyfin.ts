@@ -9,6 +9,31 @@ export interface JellyfinSession {
   serverId?: string;
 }
 
+export interface MediaStreamInfo {
+  Type: "Video" | "Audio" | "Subtitle";
+  Codec?: string;
+  Language?: string;
+  DisplayTitle?: string;
+  Title?: string;
+  Index: number;
+  IsDefault?: boolean;
+  IsForced?: boolean;
+  Width?: number;
+  Height?: number;
+  VideoRange?: string;
+  VideoRangeType?: string;
+  Channels?: number;
+  ChannelLayout?: string;
+  BitRate?: number;
+  AudioSpatialFormat?: string;
+}
+
+export interface MediaSourceInfo {
+  Id: string;
+  Container?: string;
+  MediaStreams?: MediaStreamInfo[];
+}
+
 export interface JellyfinItem {
   Id: string;
   Name: string;
@@ -34,6 +59,7 @@ export interface JellyfinItem {
   OfficialRating?: string;
   Genres?: string[];
   Taglines?: string[];
+  MediaSources?: MediaSourceInfo[];
 }
 
 const STORAGE_KEYS = {
@@ -42,6 +68,7 @@ const STORAGE_KEYS = {
   USER_ID: "jellyboxd_user_id",
   USER_NAME: "jellyboxd_user_name",
   DEVICE_ID: "jellyboxd_device_id",
+  DEFAULT_BITRATE: "jellyboxd_default_bitrate",
 };
 
 export class JellyfinService {
@@ -189,8 +216,27 @@ export class JellyfinService {
     return `${serverUrl}/Items/${itemId}/Images/${type}?maxWidth=${maxWidth}&quality=85`;
   }
 
-  static getStreamUrl(serverUrl: string, itemId: string, token: string): string {
-    return `${serverUrl}/Videos/${itemId}/master.m3u8?MediaSourceId=${itemId}&ApiKey=${token}&api_key=${token}`;
+  static getStreamUrl(
+    serverUrl: string,
+    itemId: string,
+    token: string,
+    options?: {
+      audioStreamIndex?: number;
+      subtitleStreamIndex?: number;
+      maxStreamingBitrate?: number;
+    }
+  ): string {
+    let url = `${serverUrl}/Videos/${itemId}/master.m3u8?MediaSourceId=${itemId}&ApiKey=${token}&api_key=${token}`;
+    if (options?.audioStreamIndex !== undefined) {
+      url += `&AudioStreamIndex=${options.audioStreamIndex}`;
+    }
+    if (options?.subtitleStreamIndex !== undefined) {
+      url += `&SubtitleStreamIndex=${options.subtitleStreamIndex}`;
+    }
+    if (options?.maxStreamingBitrate && options.maxStreamingBitrate > 0) {
+      url += `&MaxStreamingBitrate=${options.maxStreamingBitrate}&VideoCodec=h264,hevc&AudioCodec=aac,mp3,ac3,eac3`;
+    }
+    return url;
   }
 
   static async fetchResumeItems(session: JellyfinSession): Promise<JellyfinItem[]> {
@@ -246,6 +292,58 @@ export class JellyfinService {
     return data.Items || [];
   }
 
+  static async fetchLatestSeries(session: JellyfinSession, limit: number = 20): Promise<JellyfinItem[]> {
+    const url = `${session.serverUrl}/Users/${session.userId}/Items?IncludeItemTypes=Series&Recursive=true&SortBy=DateCreated&SortOrder=Descending&Limit=${limit}`;
+    const res = await fetch(url, {
+      headers: this.getAuthHeaders(session.token),
+    });
+    if (!res.ok) return [];
+    const data = await res.json();
+    return data.Items || [];
+  }
+
+  static async fetchNextUp(session: JellyfinSession, limit: number = 20): Promise<JellyfinItem[]> {
+    const url = `${session.serverUrl}/Shows/NextUp?userId=${session.userId}&Limit=${limit}&Fields=Overview,RunTimeTicks,UserData,ParentBackdropItemId,SeriesId,SeriesName`;
+    const res = await fetch(url, {
+      headers: this.getAuthHeaders(session.token),
+    });
+    if (!res.ok) return [];
+    const data = await res.json();
+    return data.Items || [];
+  }
+
+  static async fetchNextUpForSeries(
+    session: JellyfinSession,
+    seriesId: string
+  ): Promise<JellyfinItem | null> {
+    const url = `${session.serverUrl}/Shows/NextUp?seriesId=${seriesId}&userId=${session.userId}&Limit=1&Fields=Overview,RunTimeTicks,UserData,ParentBackdropItemId,SeriesId,SeriesName`;
+    const res = await fetch(url, {
+      headers: this.getAuthHeaders(session.token),
+    });
+    if (!res.ok) return null;
+    const data = await res.json();
+    if (data.Items && data.Items.length > 0) {
+      return data.Items[0];
+    }
+    return null;
+  }
+
+  static async searchItems(
+    session: JellyfinSession,
+    query: string,
+    types: string = "Movie,Series"
+  ): Promise<JellyfinItem[]> {
+    const url = `${session.serverUrl}/Users/${session.userId}/Items?SearchTerm=${encodeURIComponent(
+      query
+    )}&IncludeItemTypes=${types}&Recursive=true&Fields=Overview,RunTimeTicks,CommunityRating,ProductionYear,UserData&Limit=60`;
+    const res = await fetch(url, {
+      headers: this.getAuthHeaders(session.token),
+    });
+    if (!res.ok) return [];
+    const data = await res.json();
+    return data.Items || [];
+  }
+
   static async fetchMovies(session: JellyfinSession, limit: number = 25): Promise<JellyfinItem[]> {
     const url = `${session.serverUrl}/Users/${session.userId}/Items?IncludeItemTypes=Movie&Recursive=true&SortBy=SortName&Limit=${limit}`;
     const res = await fetch(url, {
@@ -271,7 +369,7 @@ export class JellyfinService {
     seriesId: string,
     seasonId: string
   ): Promise<JellyfinItem[]> {
-    const url = `${session.serverUrl}/Shows/${seriesId}/Episodes?seasonId=${seasonId}&userId=${session.userId}&Fields=Overview,PrimaryImageAspectRatio`;
+    const url = `${session.serverUrl}/Shows/${seriesId}/Episodes?seasonId=${seasonId}&userId=${session.userId}&Fields=Overview,PrimaryImageAspectRatio,MediaSources`;
     const res = await fetch(url, {
       headers: this.getAuthHeaders(session.token),
     });
@@ -284,12 +382,104 @@ export class JellyfinService {
     session: JellyfinSession,
     itemId: string
   ): Promise<JellyfinItem | null> {
-    const url = `${session.serverUrl}/Users/${session.userId}/Items/${itemId}`;
+    const url = `${session.serverUrl}/Users/${session.userId}/Items/${itemId}?Fields=MediaSources,MediaStreams,Overview,RunTimeTicks,CommunityRating,ProductionYear,OfficialRating,Genres,Taglines,People,UserData`;
     const res = await fetch(url, {
       headers: this.getAuthHeaders(session.token),
     });
     if (!res.ok) return null;
     return await res.json();
+  }
+
+  static getMediaBadges(item?: JellyfinItem | null): string[] {
+    if (!item?.MediaSources || item.MediaSources.length === 0) return [];
+    const streams = item.MediaSources[0]?.MediaStreams || [];
+    const videoStream = streams.find((s) => s.Type === "Video");
+    const audioStreams = streams.filter((s) => s.Type === "Audio");
+    const badges: string[] = [];
+
+    // Resolution badge
+    if (videoStream) {
+      const width = videoStream.Width || 0;
+      const height = videoStream.Height || 0;
+      if (width >= 3800 || height >= 2100) {
+        badges.push("4K");
+      } else if (width >= 1900 || height >= 1000) {
+        badges.push("1080p");
+      } else if (height >= 700) {
+        badges.push("720p");
+      }
+
+      // HDR / Dolby Vision badge
+      const vrType = (videoStream.VideoRangeType || "").toUpperCase();
+      const vr = (videoStream.VideoRange || "").toUpperCase();
+      if (vrType.includes("DOVI") || vrType.includes("DOLBY VISION")) {
+        badges.push("Dolby Vision");
+      } else if (vrType.includes("HDR10")) {
+        badges.push("HDR10");
+      } else if (vr === "HDR" || vrType.includes("HDR")) {
+        badges.push("HDR");
+      }
+
+      // Video Codec badge
+      const codec = (videoStream.Codec || "").toUpperCase();
+      if (codec === "HEVC" || codec === "H265") {
+        badges.push("HEVC");
+      } else if (codec === "AV1") {
+        badges.push("AV1");
+      }
+    }
+
+    // Audio format badge
+    if (audioStreams.length > 0) {
+      const defaultAudio = audioStreams.find((s) => s.IsDefault) || audioStreams[0];
+      const audioTitle = (defaultAudio.DisplayTitle || defaultAudio.Title || "").toUpperCase();
+      const spatial = (defaultAudio.AudioSpatialFormat || "").toUpperCase();
+
+      if (spatial.includes("ATMOS") || audioTitle.includes("ATMOS")) {
+        badges.push("Dolby Atmos");
+      } else if (defaultAudio.Channels === 8) {
+        badges.push("7.1");
+      } else if (defaultAudio.Channels === 6) {
+        badges.push("5.1");
+      }
+    }
+
+    return badges;
+  }
+
+  static async getDefaultBitrate(): Promise<number> {
+    try {
+      const val = await SecureStore.getItemAsync(STORAGE_KEYS.DEFAULT_BITRATE);
+      return val ? parseInt(val, 10) : 0; // 0 = Direct Play / Original
+    } catch {
+      return 0;
+    }
+  }
+
+  static async setDefaultBitrate(bitrate: number): Promise<void> {
+    try {
+      await SecureStore.setItemAsync(STORAGE_KEYS.DEFAULT_BITRATE, bitrate.toString());
+    } catch {}
+  }
+
+  static async fetchServerInfo(session: JellyfinSession): Promise<{
+    ServerName?: string;
+    Version?: string;
+    OperatingSystem?: string;
+  } | null> {
+    try {
+      const res = await fetch(`${session.serverUrl}/System/Info`, {
+        headers: this.getAuthHeaders(session.token),
+      });
+      if (res.ok) {
+        return await res.json();
+      }
+      const pubRes = await fetch(`${session.serverUrl}/System/Info/Public`);
+      if (pubRes.ok) return await pubRes.json();
+      return null;
+    } catch {
+      return null;
+    }
   }
 
   // Playback reporting for live progress sync
@@ -351,5 +541,22 @@ export class JellyfinService {
         }),
       });
     } catch {}
+  }
+
+  static async markItemPlayed(
+    session: JellyfinSession,
+    itemId: string,
+    played: boolean = true
+  ): Promise<boolean> {
+    try {
+      const url = `${session.serverUrl}/Users/${session.userId}/PlayedItems/${itemId}`;
+      const res = await fetch(url, {
+        method: played ? "POST" : "DELETE",
+        headers: this.getAuthHeaders(session.token),
+      });
+      return res.ok;
+    } catch {
+      return false;
+    }
   }
 }
