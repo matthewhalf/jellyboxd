@@ -3,16 +3,15 @@ import { useRouter } from "expo-router";
 import React, { useEffect, useState } from "react";
 import {
   ActivityIndicator,
-  FlatList,
   Image,
   Pressable,
   RefreshControl,
-  SafeAreaView,
   ScrollView,
   StyleSheet,
   Text,
   View,
 } from "react-native";
+import { SafeAreaView } from "react-native-safe-area-context";
 import { LoginScreen } from "../components/LoginScreen";
 import { useAuth } from "../context/AuthContext";
 import { JellyfinItem, JellyfinService } from "../services/jellyfin";
@@ -22,17 +21,23 @@ export default function HomeScreen() {
   const router = useRouter();
 
   const [resumeItems, setResumeItems] = useState<JellyfinItem[]>([]);
+  const [seriesList, setSeriesList] = useState<JellyfinItem[]>([]);
+  const [moviesList, setMoviesList] = useState<JellyfinItem[]>([]);
   const [libraries, setLibraries] = useState<JellyfinItem[]>([]);
   const [refreshing, setRefreshing] = useState(false);
 
   const loadData = async () => {
     if (!session) return;
     try {
-      const [resumes, userLibs] = await Promise.all([
+      const [resumes, series, movies, userLibs] = await Promise.all([
         JellyfinService.fetchResumeItems(session),
+        JellyfinService.fetchSeries(session, 20),
+        JellyfinService.fetchMovies(session, 20),
         JellyfinService.fetchLibraries(session),
       ]);
       setResumeItems(resumes);
+      setSeriesList(series);
+      setMoviesList(movies);
       setLibraries(userLibs);
     } catch (e) {
       console.error("Errore caricamento dati:", e);
@@ -80,7 +85,7 @@ export default function HomeScreen() {
         contentContainerStyle={styles.scrollContent}
         refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor="#00e054" />}
       >
-        {/* Continue Watching Section */}
+        {/* 1. Continue Watching Section */}
         {resumeItems.length > 0 && (
           <View style={styles.section}>
             <View style={styles.sectionHeader}>
@@ -90,7 +95,12 @@ export default function HomeScreen() {
             <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.horizontalList}>
               {resumeItems.map((item) => {
                 const percent = Math.round(item.UserData?.PlayedPercentage || 0);
-                const imageUrl = JellyfinService.getImageUrl(session.serverUrl, item.Id, "Primary", 300);
+                const imageUrl = JellyfinService.getImageUrl(session.serverUrl, item.Id, "Primary", 350);
+                const titleText =
+                  item.Type === "Episode"
+                    ? `${item.SeriesName || ""} S${item.ParentIndexNumber ?? 1}E${item.IndexNumber ?? 1}`
+                    : item.Name;
+
                 return (
                   <Pressable
                     key={item.Id}
@@ -101,8 +111,8 @@ export default function HomeScreen() {
                     <View style={styles.progressBarBg}>
                       <View style={[styles.progressBarFill, { width: `${percent}%` }]} />
                     </View>
-                    <Text style={styles.resumeTitle} numberOfLines={1}>
-                      {item.Type === "Episode" ? `${item.SeriesName} - S${item.ParentIndexNumber}E${item.IndexNumber}` : item.Name}
+                    <Text style={styles.cardTitle} numberOfLines={1}>
+                      {titleText}
                     </Text>
                   </Pressable>
                 );
@@ -111,27 +121,105 @@ export default function HomeScreen() {
           </View>
         )}
 
-        {/* Libraries Section */}
-        <View style={styles.section}>
-          <Text style={styles.sectionTitle}>LE TUE LIBRERIE</Text>
-          <View style={styles.librariesGrid}>
-            {libraries.map((lib) => (
-              <Pressable
-                key={lib.Id}
-                style={styles.libraryCard}
-                onPress={() => router.push({ pathname: `/library/[id]`, params: { id: lib.Id, name: lib.Name } })}
-              >
-                <Ionicons
-                  name={lib.Type === "movies" || lib.Name.toLowerCase().includes("film") ? "film-outline" : "tv-outline"}
-                  size={28}
-                  color="#00e054"
-                />
-                <Text style={styles.libraryName}>{lib.Name}</Text>
-                <Text style={styles.librarySub}>Sfoglia contenuti</Text>
-              </Pressable>
-            ))}
+        {/* 2. Le Mie Serie */}
+        {seriesList.length > 0 && (
+          <View style={styles.section}>
+            <View style={styles.sectionHeader}>
+              <Text style={styles.sectionTitle}>LE MIE SERIE</Text>
+              <Text style={styles.badgeCount}>{seriesList.length}</Text>
+            </View>
+            <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.horizontalList}>
+              {seriesList.map((series) => {
+                const imageUrl = JellyfinService.getImageUrl(session.serverUrl, series.Id, "Primary", 350);
+                const rating = series.CommunityRating ? series.CommunityRating.toFixed(1) : null;
+
+                return (
+                  <Pressable
+                    key={series.Id}
+                    style={styles.posterCard}
+                    onPress={() => router.push(`/item/${series.Id}`)}
+                  >
+                    <Image source={{ uri: imageUrl }} style={styles.posterImage} resizeMode="cover" />
+                    {rating && (
+                      <View style={styles.ratingBadge}>
+                        <Ionicons name="star" size={10} color="#00e054" />
+                        <Text style={styles.ratingText}>{rating}</Text>
+                      </View>
+                    )}
+                    <Text style={styles.cardTitle} numberOfLines={1}>
+                      {series.Name}
+                    </Text>
+                    {series.ProductionYear && (
+                      <Text style={styles.cardSub}>{series.ProductionYear}</Text>
+                    )}
+                  </Pressable>
+                );
+              })}
+            </ScrollView>
           </View>
-        </View>
+        )}
+
+        {/* 3. I Miei Film */}
+        {moviesList.length > 0 && (
+          <View style={styles.section}>
+            <View style={styles.sectionHeader}>
+              <Text style={styles.sectionTitle}>I MIEI FILM</Text>
+              <Text style={styles.badgeCount}>{moviesList.length}</Text>
+            </View>
+            <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.horizontalList}>
+              {moviesList.map((movie) => {
+                const imageUrl = JellyfinService.getImageUrl(session.serverUrl, movie.Id, "Primary", 350);
+                const rating = movie.CommunityRating ? movie.CommunityRating.toFixed(1) : null;
+
+                return (
+                  <Pressable
+                    key={movie.Id}
+                    style={styles.posterCard}
+                    onPress={() => router.push(`/item/${movie.Id}`)}
+                  >
+                    <Image source={{ uri: imageUrl }} style={styles.posterImage} resizeMode="cover" />
+                    {rating && (
+                      <View style={styles.ratingBadge}>
+                        <Ionicons name="star" size={10} color="#00e054" />
+                        <Text style={styles.ratingText}>{rating}</Text>
+                      </View>
+                    )}
+                    <Text style={styles.cardTitle} numberOfLines={1}>
+                      {movie.Name}
+                    </Text>
+                    {movie.ProductionYear && (
+                      <Text style={styles.cardSub}>{movie.ProductionYear}</Text>
+                    )}
+                  </Pressable>
+                );
+              })}
+            </ScrollView>
+          </View>
+        )}
+
+        {/* 4. Libraries Grid Section */}
+        {libraries.length > 0 && (
+          <View style={styles.section}>
+            <Text style={styles.sectionTitle}>LE TUE LIBRERIE</Text>
+            <View style={styles.librariesGrid}>
+              {libraries.map((lib) => (
+                <Pressable
+                  key={lib.Id}
+                  style={styles.libraryCard}
+                  onPress={() => router.push({ pathname: `/library/[id]`, params: { id: lib.Id, name: lib.Name } })}
+                >
+                  <Ionicons
+                    name={lib.Type === "movies" || lib.Name.toLowerCase().includes("film") ? "film-outline" : "tv-outline"}
+                    size={28}
+                    color="#00e054"
+                  />
+                  <Text style={styles.libraryName}>{lib.Name}</Text>
+                  <Text style={styles.librarySub}>Sfoglia contenuti</Text>
+                </Pressable>
+              ))}
+            </View>
+          </View>
+        )}
       </ScrollView>
     </SafeAreaView>
   );
@@ -178,6 +266,7 @@ const styles = StyleSheet.create({
   },
   scrollContent: {
     paddingVertical: 16,
+    paddingBottom: 40,
   },
   section: {
     marginBottom: 28,
@@ -194,8 +283,6 @@ const styles = StyleSheet.create({
     fontWeight: "800",
     color: "#89a",
     letterSpacing: 1.2,
-    paddingHorizontal: 20,
-    marginBottom: 12,
   },
   badgeCount: {
     backgroundColor: "#2c3440",
@@ -205,11 +292,10 @@ const styles = StyleSheet.create({
     paddingHorizontal: 6,
     paddingVertical: 2,
     borderRadius: 8,
-    marginBottom: 12,
   },
   horizontalList: {
     paddingHorizontal: 20,
-    gap: 14,
+    gap: 12,
   },
   resumeCard: {
     width: 140,
@@ -231,17 +317,49 @@ const styles = StyleSheet.create({
     height: "100%",
     backgroundColor: "#00e054",
   },
-  resumeTitle: {
+  posterCard: {
+    width: 120,
+  },
+  posterImage: {
+    width: 120,
+    height: 175,
+    borderRadius: 8,
+    backgroundColor: "#1f252c",
+  },
+  ratingBadge: {
+    position: "absolute",
+    top: 6,
+    right: 6,
+    backgroundColor: "rgba(20, 24, 28, 0.85)",
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 3,
+    paddingHorizontal: 5,
+    paddingVertical: 2,
+    borderRadius: 4,
+  },
+  ratingText: {
     color: "#ffffff",
-    fontSize: 12,
+    fontSize: 10,
+    fontWeight: "700",
+  },
+  cardTitle: {
+    color: "#ffffff",
+    fontSize: 13,
     fontWeight: "600",
     marginTop: 6,
+  },
+  cardSub: {
+    color: "#677b8c",
+    fontSize: 11,
+    marginTop: 2,
   },
   librariesGrid: {
     flexDirection: "row",
     flexWrap: "wrap",
     paddingHorizontal: 20,
     gap: 12,
+    marginTop: 12,
   },
   libraryCard: {
     width: "48%",
