@@ -1,4 +1,4 @@
-import AsyncStorage from "@react-native-async-storage/async-storage";
+import * as SecureStore from "expo-secure-store";
 import { Platform } from "react-native";
 
 export interface JellyfinSession {
@@ -73,10 +73,10 @@ export class JellyfinService {
   static async getStoredSession(): Promise<JellyfinSession | null> {
     try {
       const [serverUrl, token, userId, userName] = await Promise.all([
-        AsyncStorage.getItem(STORAGE_KEYS.SERVER_URL),
-        AsyncStorage.getItem(STORAGE_KEYS.TOKEN),
-        AsyncStorage.getItem(STORAGE_KEYS.USER_ID),
-        AsyncStorage.getItem(STORAGE_KEYS.USER_NAME),
+        SecureStore.getItemAsync(STORAGE_KEYS.SERVER_URL),
+        SecureStore.getItemAsync(STORAGE_KEYS.TOKEN),
+        SecureStore.getItemAsync(STORAGE_KEYS.USER_ID),
+        SecureStore.getItemAsync(STORAGE_KEYS.USER_NAME),
       ]);
 
       if (serverUrl && token && userId) {
@@ -95,19 +95,19 @@ export class JellyfinService {
 
   static async saveSession(session: JellyfinSession): Promise<void> {
     await Promise.all([
-      AsyncStorage.setItem(STORAGE_KEYS.SERVER_URL, session.serverUrl),
-      AsyncStorage.setItem(STORAGE_KEYS.TOKEN, session.token),
-      AsyncStorage.setItem(STORAGE_KEYS.USER_ID, session.userId),
-      AsyncStorage.setItem(STORAGE_KEYS.USER_NAME, session.userName),
+      SecureStore.setItemAsync(STORAGE_KEYS.SERVER_URL, session.serverUrl),
+      SecureStore.setItemAsync(STORAGE_KEYS.TOKEN, session.token),
+      SecureStore.setItemAsync(STORAGE_KEYS.USER_ID, session.userId),
+      SecureStore.setItemAsync(STORAGE_KEYS.USER_NAME, session.userName),
     ]);
   }
 
   static async clearSession(): Promise<void> {
     await Promise.all([
-      AsyncStorage.removeItem(STORAGE_KEYS.SERVER_URL),
-      AsyncStorage.removeItem(STORAGE_KEYS.TOKEN),
-      AsyncStorage.removeItem(STORAGE_KEYS.USER_ID),
-      AsyncStorage.removeItem(STORAGE_KEYS.USER_NAME),
+      SecureStore.deleteItemAsync(STORAGE_KEYS.SERVER_URL),
+      SecureStore.deleteItemAsync(STORAGE_KEYS.TOKEN),
+      SecureStore.deleteItemAsync(STORAGE_KEYS.USER_ID),
+      SecureStore.deleteItemAsync(STORAGE_KEYS.USER_NAME),
     ]);
   }
 
