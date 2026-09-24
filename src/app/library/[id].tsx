@@ -38,7 +38,7 @@ export default function LibraryScreen() {
   if (isLoading) {
     return (
       <View style={styles.center}>
-        <ActivityIndicator size="large" color="#00e054" />
+        <ActivityIndicator size="large" color="#ffffff" />
       </View>
     );
   }
@@ -65,7 +65,7 @@ export default function LibraryScreen() {
               <Image source={{ uri: imageUrl }} style={styles.poster} resizeMode="cover" />
               {rating && (
                 <View style={styles.ratingBadge}>
-                  <Ionicons name="star" size={10} color="#00e054" />
+                  <Ionicons name="star" size={10} color="#ffcc00" />
                   <Text style={styles.ratingText}>{rating}</Text>
                 </View>
               )}
@@ -95,11 +95,11 @@ const styles = StyleSheet.create({
     backgroundColor: "#14181c",
   },
   listContent: {
-    padding: 20,
+    padding: 16,
   },
   row: {
-    gap: 10,
-    marginBottom: 16,
+    gap: 8,
+    marginBottom: 14,
   },
   itemCard: {
     width: ITEM_WIDTH,
@@ -107,7 +107,7 @@ const styles = StyleSheet.create({
   poster: {
     width: ITEM_WIDTH,
     height: ITEM_HEIGHT,
-    borderRadius: 6,
+    borderRadius: 8,
     backgroundColor: "#1f252c",
   },
   ratingBadge: {
