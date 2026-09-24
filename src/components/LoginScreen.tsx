@@ -57,7 +57,7 @@ export const LoginScreen: React.FC = () => {
           <Text style={styles.label}>SERVER JELLYFIN</Text>
           <TextInput
             style={styles.input}
-            placeholder="http://192.168.1.100:8096"
+            placeholder="http://192.168.1.238:8096"
             placeholderTextColor="#677b8c"
             value={serverUrl}
             onChangeText={setServerUrl}
