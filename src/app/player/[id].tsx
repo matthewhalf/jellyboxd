@@ -5,12 +5,12 @@ import React, { useEffect, useRef, useState } from "react";
 import {
   ActivityIndicator,
   Pressable,
-  SafeAreaView,
   StatusBar,
   StyleSheet,
   Text,
   View,
 } from "react-native";
+import { SafeAreaView } from "react-native-safe-area-context";
 import { useAuth } from "../../context/AuthContext";
 import { JellyfinItem, JellyfinService } from "../../services/jellyfin";
 
@@ -42,7 +42,9 @@ export default function PlayerScreen() {
     if (player && item?.UserData?.PlaybackPositionTicks) {
       const resumeSeconds = item.UserData.PlaybackPositionTicks / 10000000;
       if (resumeSeconds > 10) {
-        player.currentTime = resumeSeconds;
+        try {
+          player.currentTime = resumeSeconds;
+        } catch {}
       }
     }
   }, [player, item]);
@@ -55,25 +57,30 @@ export default function PlayerScreen() {
     JellyfinService.reportPlaybackStart(session, id);
 
     const interval = setInterval(() => {
-      if (player && player.playing) {
-        const ticks = Math.round(player.currentTime * 10000000);
-        lastReportedTicks.current = ticks;
-        JellyfinService.reportPlaybackProgress(session, id, ticks, false);
-      }
+      try {
+        if (player && player.playing) {
+          const ticks = Math.round(player.currentTime * 10000000);
+          lastReportedTicks.current = ticks;
+          JellyfinService.reportPlaybackProgress(session, id, ticks, false);
+        }
+      } catch {}
     }, 10000);
 
     return () => {
       clearInterval(interval);
-      // Report Playback Stopped on unmount
-      const finalTicks = player ? Math.round(player.currentTime * 10000000) : lastReportedTicks.current;
-      JellyfinService.reportPlaybackStopped(session, id, finalTicks);
+      // Safe cleanup without accessing player (which could already be deallocated)
+      try {
+        JellyfinService.reportPlaybackStopped(session, id, lastReportedTicks.current);
+      } catch {}
     };
-  }, [session, id, player]);
+  }, [session, id]);
 
   const handleClose = () => {
-    if (player) {
-      player.pause();
-    }
+    try {
+      if (player) {
+        player.pause();
+      }
+    } catch {}
     router.back();
   };
 
@@ -86,6 +93,11 @@ export default function PlayerScreen() {
       </View>
     );
   }
+
+  const titleText =
+    item.Type === "Episode"
+      ? `${item.SeriesName || ""} - S${item.ParentIndexNumber ?? 1}E${item.IndexNumber ?? 1}`
+      : item.Name;
 
   return (
     <View style={styles.container}>
@@ -101,9 +113,7 @@ export default function PlayerScreen() {
           <Ionicons name="close" size={28} color="#ffffff" />
         </Pressable>
         <Text style={styles.title} numberOfLines={1}>
-          {item.Type === "Episode"
-            ? `${item.SeriesName} - S${item.ParentIndexNumber}E${item.IndexNumber}`
-            : item.Name}
+          {titleText}
         </Text>
       </SafeAreaView>
     </View>
@@ -139,7 +149,7 @@ const styles = StyleSheet.create({
     gap: 12,
   },
   closeButton: {
-    backgroundColor: "rgba(0,0,0,0.5)",
+    backgroundColor: "rgba(0,0,0,0.6)",
     padding: 8,
     borderRadius: 20,
   },

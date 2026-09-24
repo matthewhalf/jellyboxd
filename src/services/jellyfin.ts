@@ -12,7 +12,7 @@ export interface JellyfinSession {
 export interface JellyfinItem {
   Id: string;
   Name: string;
-  Type: "Movie" | "Series" | "Episode" | "CollectionFolder" | string;
+  Type: "Movie" | "Series" | "Episode" | "Season" | "CollectionFolder" | string;
   Overview?: string;
   CommunityRating?: number;
   ProductionYear?: number;
@@ -24,8 +24,10 @@ export interface JellyfinItem {
     Played?: boolean;
   };
   SeriesName?: string;
+  SeriesId?: string;
   SeasonName?: string;
-  IndexNumber?: number; // Episode number
+  SeasonId?: string;
+  IndexNumber?: number; // Episode number or Season number
   ParentIndexNumber?: number; // Season number
   PremiereDate?: string;
   OfficialRating?: string;
@@ -214,7 +216,52 @@ export class JellyfinService {
     session: JellyfinSession,
     parentId: string
   ): Promise<JellyfinItem[]> {
-    const url = `${session.serverUrl}/Users/${session.userId}/Items?ParentId=${parentId}&Recursive=true&SortBy=SortName&Limit=100`;
+    // Only return top-level series or movies in the library, never loose episodes or seasons
+    const url = `${session.serverUrl}/Users/${session.userId}/Items?ParentId=${parentId}&Recursive=true&IncludeItemTypes=Movie,Series&SortBy=SortName&Limit=200`;
+    const res = await fetch(url, {
+      headers: this.getAuthHeaders(session.token),
+    });
+    if (!res.ok) return [];
+    const data = await res.json();
+    return data.Items || [];
+  }
+
+  static async fetchSeries(session: JellyfinSession, limit: number = 25): Promise<JellyfinItem[]> {
+    const url = `${session.serverUrl}/Users/${session.userId}/Items?IncludeItemTypes=Series&Recursive=true&SortBy=SortName&Limit=${limit}`;
+    const res = await fetch(url, {
+      headers: this.getAuthHeaders(session.token),
+    });
+    if (!res.ok) return [];
+    const data = await res.json();
+    return data.Items || [];
+  }
+
+  static async fetchMovies(session: JellyfinSession, limit: number = 25): Promise<JellyfinItem[]> {
+    const url = `${session.serverUrl}/Users/${session.userId}/Items?IncludeItemTypes=Movie&Recursive=true&SortBy=SortName&Limit=${limit}`;
+    const res = await fetch(url, {
+      headers: this.getAuthHeaders(session.token),
+    });
+    if (!res.ok) return [];
+    const data = await res.json();
+    return data.Items || [];
+  }
+
+  static async fetchSeasons(session: JellyfinSession, seriesId: string): Promise<JellyfinItem[]> {
+    const url = `${session.serverUrl}/Shows/${seriesId}/Seasons?userId=${session.userId}`;
+    const res = await fetch(url, {
+      headers: this.getAuthHeaders(session.token),
+    });
+    if (!res.ok) return [];
+    const data = await res.json();
+    return data.Items || [];
+  }
+
+  static async fetchEpisodes(
+    session: JellyfinSession,
+    seriesId: string,
+    seasonId: string
+  ): Promise<JellyfinItem[]> {
+    const url = `${session.serverUrl}/Shows/${seriesId}/Episodes?seasonId=${seasonId}&userId=${session.userId}&Fields=Overview,PrimaryImageAspectRatio`;
     const res = await fetch(url, {
       headers: this.getAuthHeaders(session.token),
     });

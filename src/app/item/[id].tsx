@@ -3,7 +3,6 @@ import { useLocalSearchParams, useRouter } from "expo-router";
 import React, { useEffect, useState } from "react";
 import {
   ActivityIndicator,
-  Dimensions,
   Image,
   Pressable,
   ScrollView,
@@ -14,23 +13,47 @@ import {
 import { useAuth } from "../../context/AuthContext";
 import { JellyfinItem, JellyfinService } from "../../services/jellyfin";
 
-const { width } = Dimensions.get("window");
-
 export default function ItemDetailScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
   const { session } = useAuth();
   const router = useRouter();
 
   const [item, setItem] = useState<JellyfinItem | null>(null);
+  const [seasons, setSeasons] = useState<JellyfinItem[]>([]);
+  const [selectedSeasonId, setSelectedSeasonId] = useState<string | null>(null);
+  const [episodes, setEpisodes] = useState<JellyfinItem[]>([]);
   const [isLoading, setIsLoading] = useState(true);
+  const [loadingEpisodes, setLoadingEpisodes] = useState(false);
 
+  // Load main item metadata
   useEffect(() => {
     if (!session || !id) return;
+    setIsLoading(true);
+
     JellyfinService.fetchItemDetails(session, id)
-      .then((data) => setItem(data))
+      .then(async (data) => {
+        setItem(data);
+        if (data?.Type === "Series") {
+          const seasonsList = await JellyfinService.fetchSeasons(session, id);
+          setSeasons(seasonsList);
+          if (seasonsList.length > 0) {
+            setSelectedSeasonId(seasonsList[0].Id);
+          }
+        }
+      })
       .catch((err) => console.error("Errore fetch dettagli:", err))
       .finally(() => setIsLoading(false));
   }, [session, id]);
+
+  // Load episodes when active season changes
+  useEffect(() => {
+    if (!session || !id || !selectedSeasonId || item?.Type !== "Series") return;
+    setLoadingEpisodes(true);
+    JellyfinService.fetchEpisodes(session, id, selectedSeasonId)
+      .then((eps) => setEpisodes(eps))
+      .catch((err) => console.error("Errore fetch episodi:", err))
+      .finally(() => setLoadingEpisodes(false));
+  }, [session, id, selectedSeasonId, item?.Type]);
 
   if (isLoading || !item || !session) {
     return (
@@ -40,6 +63,7 @@ export default function ItemDetailScreen() {
     );
   }
 
+  const isSeries = item.Type === "Series";
   const backdropUrl = JellyfinService.getImageUrl(session.serverUrl, item.Id, "Backdrop", 900);
   const posterUrl = JellyfinService.getImageUrl(session.serverUrl, item.Id, "Primary", 500);
   const runtimeMins = item.RunTimeTicks ? Math.round(item.RunTimeTicks / (10000000 * 60)) : null;
@@ -61,6 +85,9 @@ export default function ItemDetailScreen() {
             <View style={styles.metaRow}>
               {item.ProductionYear && <Text style={styles.metaText}>{item.ProductionYear}</Text>}
               {runtimeMins && <Text style={styles.metaText}>•  {runtimeMins} min</Text>}
+              {isSeries && seasons.length > 0 && (
+                <Text style={styles.metaText}>•  {seasons.length} {seasons.length === 1 ? "stagione" : "stagioni"}</Text>
+              )}
             </View>
             {item.CommunityRating && (
               <View style={styles.ratingRow}>
@@ -77,20 +104,94 @@ export default function ItemDetailScreen() {
           </View>
         </View>
 
-        {/* Play Button */}
-        <Pressable
-          style={({ pressed }) => [styles.playButton, pressed && styles.playButtonPressed]}
-          onPress={() => router.push(`/player/${item.Id}`)}
-        >
-          <Ionicons name="play" size={20} color="#000000" />
-          <Text style={styles.playButtonText}>RIPRODUCI ORA</Text>
-        </Pressable>
+        {/* Play Movie / Direct Play button if not a Series */}
+        {!isSeries && (
+          <Pressable
+            style={({ pressed }) => [styles.playButton, pressed && styles.playButtonPressed]}
+            onPress={() => router.push(`/player/${item.Id}`)}
+          >
+            <Ionicons name="play" size={20} color="#000000" />
+            <Text style={styles.playButtonText}>RIPRODUCI FILM</Text>
+          </Pressable>
+        )}
 
         {/* Plot Synopsis */}
         {item.Overview && (
           <View style={styles.synopsisContainer}>
-            <Text style={styles.synopsisLabel}>TRAMA</Text>
+            <Text style={styles.sectionLabel}>TRAMA</Text>
             <Text style={styles.overview}>{item.Overview}</Text>
+          </View>
+        )}
+
+        {/* TV Series Seasons & Episodes */}
+        {isSeries && (
+          <View style={styles.seriesSection}>
+            <Text style={styles.sectionLabel}>STAGIONI</Text>
+            <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.seasonsList}>
+              {seasons.map((season) => {
+                const isSelected = season.Id === selectedSeasonId;
+                return (
+                  <Pressable
+                    key={season.Id}
+                    style={[styles.seasonPill, isSelected && styles.seasonPillActive]}
+                    onPress={() => setSelectedSeasonId(season.Id)}
+                  >
+                    <Text style={[styles.seasonPillText, isSelected && styles.seasonPillTextActive]}>
+                      {season.Name}
+                    </Text>
+                  </Pressable>
+                );
+              })}
+            </ScrollView>
+
+            <View style={styles.episodesHeader}>
+              <Text style={styles.sectionLabel}>EPISODI</Text>
+              {episodes.length > 0 && (
+                <Text style={styles.episodesCount}>{episodes.length} episodi</Text>
+              )}
+            </View>
+
+            {loadingEpisodes ? (
+              <View style={styles.episodesLoading}>
+                <ActivityIndicator color="#00e054" />
+              </View>
+            ) : episodes.length === 0 ? (
+              <Text style={styles.emptyEpisodesText}>Nessun episodio trovato in questa stagione.</Text>
+            ) : (
+              <View style={styles.episodesList}>
+                {episodes.map((ep) => {
+                  const epImageUrl = JellyfinService.getImageUrl(session.serverUrl, ep.Id, "Primary", 400);
+                  const epMins = ep.RunTimeTicks ? Math.round(ep.RunTimeTicks / (10000000 * 60)) : null;
+
+                  return (
+                    <Pressable
+                      key={ep.Id}
+                      style={({ pressed }) => [styles.episodeCard, pressed && styles.episodeCardPressed]}
+                      onPress={() => router.push(`/player/${ep.Id}`)}
+                    >
+                      <View style={styles.epThumbnailContainer}>
+                        <Image source={{ uri: epImageUrl }} style={styles.epThumbnail} resizeMode="cover" />
+                        <View style={styles.epPlayOverlay}>
+                          <Ionicons name="play-circle" size={32} color="#00e054" />
+                        </View>
+                      </View>
+
+                      <View style={styles.epInfo}>
+                        <Text style={styles.epTitle} numberOfLines={1}>
+                          {ep.IndexNumber !== undefined ? `${ep.IndexNumber}. ` : ""}{ep.Name}
+                        </Text>
+                        {epMins && <Text style={styles.epDuration}>{epMins} min</Text>}
+                        {ep.Overview && (
+                          <Text style={styles.epOverview} numberOfLines={2}>
+                            {ep.Overview}
+                          </Text>
+                        )}
+                      </View>
+                    </Pressable>
+                  );
+                })}
+              </View>
+            )}
           </View>
         )}
       </View>
@@ -110,7 +211,7 @@ const styles = StyleSheet.create({
     backgroundColor: "#14181c",
   },
   content: {
-    paddingBottom: 40,
+    paddingBottom: 60,
   },
   backdropContainer: {
     width: "100%",
@@ -204,18 +305,119 @@ const styles = StyleSheet.create({
     letterSpacing: 1,
   },
   synopsisContainer: {
-    marginTop: 28,
+    marginTop: 26,
   },
-  synopsisLabel: {
+  sectionLabel: {
     fontSize: 12,
     fontWeight: "800",
     color: "#677b8c",
     letterSpacing: 1,
-    marginBottom: 8,
+    marginBottom: 10,
   },
   overview: {
     color: "#ccd",
     fontSize: 14,
     lineHeight: 22,
+  },
+  seriesSection: {
+    marginTop: 26,
+  },
+  seasonsList: {
+    gap: 8,
+    marginBottom: 20,
+  },
+  seasonPill: {
+    paddingHorizontal: 16,
+    paddingVertical: 8,
+    borderRadius: 20,
+    backgroundColor: "#1f252c",
+    borderWidth: 1,
+    borderColor: "#2c3440",
+  },
+  seasonPillActive: {
+    backgroundColor: "#00e054",
+    borderColor: "#00e054",
+  },
+  seasonPillText: {
+    color: "#9ab",
+    fontSize: 13,
+    fontWeight: "700",
+  },
+  seasonPillTextActive: {
+    color: "#000000",
+    fontWeight: "800",
+  },
+  episodesHeader: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+    marginBottom: 12,
+  },
+  episodesCount: {
+    color: "#677b8c",
+    fontSize: 12,
+    fontWeight: "600",
+  },
+  episodesLoading: {
+    paddingVertical: 30,
+    alignItems: "center",
+  },
+  emptyEpisodesText: {
+    color: "#677b8c",
+    fontSize: 13,
+    fontStyle: "italic",
+    paddingVertical: 12,
+  },
+  episodesList: {
+    gap: 12,
+  },
+  episodeCard: {
+    flexDirection: "row",
+    backgroundColor: "#1f252c",
+    borderRadius: 10,
+    overflow: "hidden",
+    borderWidth: 1,
+    borderColor: "#2c3440",
+  },
+  episodeCardPressed: {
+    opacity: 0.8,
+  },
+  epThumbnailContainer: {
+    width: 120,
+    height: 75,
+    position: "relative",
+    backgroundColor: "#14181c",
+  },
+  epThumbnail: {
+    width: "100%",
+    height: "100%",
+  },
+  epPlayOverlay: {
+    ...StyleSheet.absoluteFill,
+    backgroundColor: "rgba(0,0,0,0.35)",
+    justifyContent: "center",
+    alignItems: "center",
+  },
+  epInfo: {
+    flex: 1,
+    padding: 10,
+    justifyContent: "center",
+  },
+  epTitle: {
+    color: "#ffffff",
+    fontSize: 14,
+    fontWeight: "700",
+    marginBottom: 4,
+  },
+  epDuration: {
+    color: "#00e054",
+    fontSize: 11,
+    fontWeight: "600",
+    marginBottom: 4,
+  },
+  epOverview: {
+    color: "#89a",
+    fontSize: 12,
+    lineHeight: 16,
   },
 });
