@@ -171,6 +171,8 @@ export default function ItemDetailScreen() {
                 {episodes.map((ep) => {
                   const epImageUrl = JellyfinService.getImageUrl(session.serverUrl, ep.Id, "Primary", 400);
                   const epMins = ep.RunTimeTicks ? Math.round(ep.RunTimeTicks / (10000000 * 60)) : null;
+                  const isPlayed = !!ep.UserData?.Played;
+                  const progress = ep.UserData?.PlayedPercentage || 0;
 
                   return (
                     <Pressable
@@ -180,21 +182,35 @@ export default function ItemDetailScreen() {
                     >
                       <View style={styles.epThumbnailContainer}>
                         <Image source={{ uri: epImageUrl }} style={styles.epThumbnail} resizeMode="cover" />
-                        <View style={styles.epPlayOverlay}>
-                          <Ionicons name="play-circle" size={32} color="#00e054" />
-                        </View>
+                        {isPlayed ? (
+                          <View style={styles.watchedIconOverlay}>
+                            <Ionicons name="checkmark-circle" size={26} color="#00e054" />
+                          </View>
+                        ) : (
+                          <View style={styles.epPlayOverlay}>
+                            <Ionicons name="play-circle" size={28} color="#ffffff" />
+                          </View>
+                        )}
+                        {!isPlayed && progress > 0 && (
+                          <View style={styles.epProgressBarBg}>
+                            <View style={[styles.epProgressBarFill, { width: `${progress}%` }]} />
+                          </View>
+                        )}
                       </View>
 
                       <View style={styles.epInfo}>
-                        <Text style={styles.epTitle} numberOfLines={1}>
-                          {ep.IndexNumber !== undefined ? `${ep.IndexNumber}. ` : ""}{ep.Name}
-                        </Text>
-                        {epMins && <Text style={styles.epDuration}>{epMins} min</Text>}
-                        {ep.Overview && (
-                          <Text style={styles.epOverview} numberOfLines={2}>
-                            {ep.Overview}
+                        <View style={styles.epTitleRow}>
+                          <Text style={[styles.epTitle, isPlayed && styles.epTitlePlayed]} numberOfLines={1}>
+                            {ep.IndexNumber !== undefined ? `${ep.IndexNumber}. ` : ""}{ep.Name}
                           </Text>
-                        )}
+                          {isPlayed && (
+                            <View style={styles.watchedBadge}>
+                              <Ionicons name="checkmark" size={10} color="#000000" />
+                              <Text style={styles.watchedText}>VISTO</Text>
+                            </View>
+                          )}
+                        </View>
+                        {epMins && <Text style={styles.epDuration}>{epMins} min</Text>}
                       </View>
                     </Pressable>
                   );
@@ -422,30 +438,67 @@ const styles = StyleSheet.create({
   },
   epPlayOverlay: {
     ...StyleSheet.absoluteFill,
-    backgroundColor: "rgba(0,0,0,0.35)",
+    backgroundColor: "rgba(0,0,0,0.25)",
     justifyContent: "center",
     alignItems: "center",
+  },
+  watchedIconOverlay: {
+    ...StyleSheet.absoluteFill,
+    backgroundColor: "rgba(0,0,0,0.45)",
+    justifyContent: "center",
+    alignItems: "center",
+  },
+  epProgressBarBg: {
+    position: "absolute",
+    bottom: 0,
+    left: 0,
+    right: 0,
+    height: 3,
+    backgroundColor: "rgba(0,0,0,0.5)",
+  },
+  epProgressBarFill: {
+    height: "100%",
+    backgroundColor: "#00e054",
   },
   epInfo: {
     flex: 1,
     padding: 10,
     justifyContent: "center",
   },
+  epTitleRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    gap: 8,
+    marginBottom: 4,
+  },
   epTitle: {
     color: "#ffffff",
     fontSize: 14,
     fontWeight: "700",
-    marginBottom: 4,
+    flex: 1,
+  },
+  epTitlePlayed: {
+    color: "#89a",
+  },
+  watchedBadge: {
+    backgroundColor: "#00e054",
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 3,
+    paddingHorizontal: 5,
+    paddingVertical: 2,
+    borderRadius: 4,
+  },
+  watchedText: {
+    color: "#000000",
+    fontSize: 9,
+    fontWeight: "800",
+    letterSpacing: 0.5,
   },
   epDuration: {
     color: "#00e054",
     fontSize: 11,
     fontWeight: "600",
-    marginBottom: 4,
-  },
-  epOverview: {
-    color: "#89a",
-    fontSize: 12,
-    lineHeight: 16,
   },
 });
