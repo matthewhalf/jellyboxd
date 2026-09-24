@@ -182,34 +182,24 @@ export default function ItemDetailScreen() {
                     >
                       <View style={styles.epThumbnailContainer}>
                         <Image source={{ uri: epImageUrl }} style={styles.epThumbnail} resizeMode="cover" />
-                        {isPlayed ? (
-                          <View style={styles.watchedIconOverlay}>
-                            <Ionicons name="checkmark-circle" size={26} color="#00e054" />
-                          </View>
-                        ) : (
-                          <View style={styles.epPlayOverlay}>
-                            <Ionicons name="play-circle" size={28} color="#ffffff" />
-                          </View>
-                        )}
-                        {!isPlayed && progress > 0 && (
-                          <View style={styles.epProgressBarBg}>
-                            <View style={[styles.epProgressBarFill, { width: `${progress}%` }]} />
-                          </View>
-                        )}
+                        <View style={styles.epPlayOverlay}>
+                          <Ionicons name="play-circle" size={26} color="rgba(255,255,255,0.85)" />
+                        </View>
+                        {/* Colored progress bar under the episode image */}
+                        <View style={styles.epProgressBarBg}>
+                          <View
+                            style={[
+                              styles.epProgressBarFill,
+                              { width: isPlayed ? "100%" : progress > 0 ? `${progress}%` : "0%" },
+                            ]}
+                          />
+                        </View>
                       </View>
 
                       <View style={styles.epInfo}>
-                        <View style={styles.epTitleRow}>
-                          <Text style={[styles.epTitle, isPlayed && styles.epTitlePlayed]} numberOfLines={1}>
-                            {ep.IndexNumber !== undefined ? `${ep.IndexNumber}. ` : ""}{ep.Name}
-                          </Text>
-                          {isPlayed && (
-                            <View style={styles.watchedBadge}>
-                              <Ionicons name="checkmark" size={10} color="#000000" />
-                              <Text style={styles.watchedText}>VISTO</Text>
-                            </View>
-                          )}
-                        </View>
+                        <Text style={[styles.epTitle, isPlayed && styles.epTitlePlayed]} numberOfLines={1}>
+                          {ep.IndexNumber !== undefined ? `${ep.IndexNumber}. ` : ""}{ep.Name}
+                        </Text>
                         {epMins && <Text style={styles.epDuration}>{epMins} min</Text>}
                       </View>
                     </Pressable>
