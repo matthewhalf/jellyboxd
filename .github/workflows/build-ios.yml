@@ -31,10 +31,10 @@ jobs:
         with:
           bun-version: latest
 
-      - name: 🔧 Setup Xcode
+      - name: 🔧 Setup Xcode 26 (Swift 6.2)
         uses: maxim-lobanov/setup-xcode@v1
         with:
-          xcode-version: '16.4'
+          xcode-version: '26.0'
 
       - name: 🔍 Verify Xcode and Swift Toolchain
         run: |
@@ -50,9 +50,14 @@ jobs:
         run: |
           bun install --frozen-lockfile
 
+      - name: 🩹 Patch Expo Dependencies for Swift 6.2
+        run: |
+          node ./scripts/patch-expo-modules-jsi.js
+
       - name: ⚙️ Expo Prebuild (Generate iOS Native Project)
         run: |
           npx expo prebuild --platform ios --clean
+          node ./scripts/patch-expo-modules-jsi.js
 
       - name: 🔗 Configure Xcode Node Environment
         run: |
