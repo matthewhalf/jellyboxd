@@ -6,7 +6,6 @@
     "@expo/ui": "~57.0.20",
     "@expo/vector-icons": "^15.1.1",
     "@jellyfin/sdk": "^1.0.0",
-    "@react-native-async-storage/async-storage": "^3.1.1",
     "expo": "~57.0.25",
     "expo-constants": "~57.0.19",
     "expo-device": "~57.0.2",
