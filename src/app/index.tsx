@@ -200,7 +200,9 @@ export default function HomeScreen() {
         {/* 4. Libraries Grid Section */}
         {libraries.length > 0 && (
           <View style={styles.section}>
-            <Text style={styles.sectionTitle}>LE TUE LIBRERIE</Text>
+            <View style={styles.sectionHeader}>
+              <Text style={styles.sectionTitle}>LE TUE LIBRERIE</Text>
+            </View>
             <View style={styles.librariesGrid}>
               {libraries.map((lib) => (
                 <Pressable

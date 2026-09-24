@@ -69,12 +69,21 @@ export default function ItemDetailScreen() {
   const runtimeMins = item.RunTimeTicks ? Math.round(item.RunTimeTicks / (10000000 * 60)) : null;
 
   return (
-    <ScrollView style={styles.container} contentContainerStyle={styles.content}>
-      {/* Backdrop */}
-      <View style={styles.backdropContainer}>
-        <Image source={{ uri: backdropUrl }} style={styles.backdrop} resizeMode="cover" />
-        <View style={styles.backdropOverlay} />
-      </View>
+    <View style={styles.container}>
+      {/* Floating Back Button */}
+      <Pressable
+        style={({ pressed }) => [styles.floatingBackButton, pressed && styles.floatingButtonPressed]}
+        onPress={() => router.back()}
+      >
+        <Ionicons name="chevron-back" size={24} color="#ffffff" />
+      </Pressable>
+
+      <ScrollView contentContainerStyle={styles.content}>
+        {/* Backdrop */}
+        <View style={styles.backdropContainer}>
+          <Image source={{ uri: backdropUrl }} style={styles.backdrop} resizeMode="cover" />
+          <View style={styles.backdropOverlay} />
+        </View>
 
       {/* Main Info */}
       <View style={styles.detailsContainer}>
@@ -196,13 +205,32 @@ export default function ItemDetailScreen() {
         )}
       </View>
     </ScrollView>
-  );
+  </View>
+);
 }
 
 const styles = StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: "#14181c",
+  },
+  floatingBackButton: {
+    position: "absolute",
+    top: 52,
+    left: 16,
+    zIndex: 20,
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: "rgba(20, 24, 28, 0.75)",
+    justifyContent: "center",
+    alignItems: "center",
+    borderWidth: 1,
+    borderColor: "rgba(255, 255, 255, 0.2)",
+  },
+  floatingButtonPressed: {
+    opacity: 0.75,
+    transform: [{ scale: 0.95 }],
   },
   center: {
     flex: 1,

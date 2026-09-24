@@ -189,7 +189,7 @@ export class JellyfinService {
   }
 
   static getStreamUrl(serverUrl: string, itemId: string, token: string): string {
-    return `${serverUrl}/Videos/${itemId}/stream?static=true&api_key=${token}`;
+    return `${serverUrl}/Videos/${itemId}/master.m3u8?MediaSourceId=${itemId}&ApiKey=${token}&api_key=${token}`;
   }
 
   static async fetchResumeItems(session: JellyfinSession): Promise<JellyfinItem[]> {
