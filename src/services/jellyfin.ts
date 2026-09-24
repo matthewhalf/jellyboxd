@@ -57,6 +57,19 @@ export class JellyfinService {
     return parts.join(", ");
   }
 
+  private static getAuthHeaders(token?: string): Record<string, string> {
+    const auth = this.getAuthHeader(token);
+    const headers: Record<string, string> = {
+      Authorization: auth,
+      "X-Emby-Authorization": auth,
+    };
+    if (token) {
+      headers["X-MediaBrowser-Token"] = token;
+      headers["X-Emby-Token"] = token;
+    }
+    return headers;
+  }
+
   static async getStoredSession(): Promise<JellyfinSession | null> {
     try {
       const [serverUrl, token, userId, userName] = await Promise.all([
@@ -111,12 +124,29 @@ export class JellyfinService {
       cleanUrl = cleanUrl.slice(0, -1);
     }
 
+    console.log(`[JellyfinService] Connessione a: ${cleanUrl}`);
+
+    // Verifica preliminare raggiungibilità server (System/Info/Public)
+    try {
+      const pingRes = await fetch(`${cleanUrl}/System/Info/Public`, {
+        headers: { "Content-Type": "application/json" },
+      });
+      if (!pingRes.ok) {
+        console.warn(`[JellyfinService] Ping server non riuscito: ${pingRes.status}`);
+      }
+    } catch (netErr: any) {
+      console.error(`[JellyfinService] Errore di rete verso ${cleanUrl}:`, netErr);
+      throw new Error(
+        `Impossibile raggiungere il server all'indirizzo ${cleanUrl}.\n\nSe il server è in esecuzione su questo computer, usa l'IP locale (es. http://192.168.1.238:8096) e non "localhost".`
+      );
+    }
+
     const endpoint = `${cleanUrl}/Users/AuthenticateByName`;
     const res = await fetch(endpoint, {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
-        "X-Emby-Authorization": this.getAuthHeader(),
+        ...this.getAuthHeaders(),
       },
       body: JSON.stringify({
         Username: username,
@@ -128,7 +158,9 @@ export class JellyfinService {
       if (res.status === 401) {
         throw new Error("Credenziali non corrette (username o password errati).");
       }
-      throw new Error(`Errore di connessione al server (${res.status} ${res.statusText}).`);
+      const errText = await res.text().catch(() => "");
+      console.error(`[JellyfinService] Errore login ${res.status}: ${errText}`);
+      throw new Error(`Errore dal server Jellyfin (${res.status}): ${errText || res.statusText}`);
     }
 
     const data = await res.json();
@@ -140,6 +172,7 @@ export class JellyfinService {
       serverId: data.ServerId,
     };
 
+    console.log(`[JellyfinService] Login completato per ${session.userName} (${session.userId})`);
     await this.saveSession(session);
     return session;
   }
@@ -160,9 +193,7 @@ export class JellyfinService {
   static async fetchResumeItems(session: JellyfinSession): Promise<JellyfinItem[]> {
     const url = `${session.serverUrl}/UserViews/${session.userId}/Items?Recursive=true&Filters=IsResumable&SortBy=DatePlayed&SortOrder=Descending&Limit=15`;
     const res = await fetch(url, {
-      headers: {
-        "X-Emby-Authorization": this.getAuthHeader(session.token),
-      },
+      headers: this.getAuthHeaders(session.token),
     });
     if (!res.ok) return [];
     const data = await res.json();
@@ -172,9 +203,7 @@ export class JellyfinService {
   static async fetchLibraries(session: JellyfinSession): Promise<JellyfinItem[]> {
     const url = `${session.serverUrl}/Users/${session.userId}/Views`;
     const res = await fetch(url, {
-      headers: {
-        "X-Emby-Authorization": this.getAuthHeader(session.token),
-      },
+      headers: this.getAuthHeaders(session.token),
     });
     if (!res.ok) return [];
     const data = await res.json();
@@ -187,9 +216,7 @@ export class JellyfinService {
   ): Promise<JellyfinItem[]> {
     const url = `${session.serverUrl}/Users/${session.userId}/Items?ParentId=${parentId}&Recursive=true&SortBy=SortName&Limit=100`;
     const res = await fetch(url, {
-      headers: {
-        "X-Emby-Authorization": this.getAuthHeader(session.token),
-      },
+      headers: this.getAuthHeaders(session.token),
     });
     if (!res.ok) return [];
     const data = await res.json();
@@ -202,9 +229,7 @@ export class JellyfinService {
   ): Promise<JellyfinItem | null> {
     const url = `${session.serverUrl}/Users/${session.userId}/Items/${itemId}`;
     const res = await fetch(url, {
-      headers: {
-        "X-Emby-Authorization": this.getAuthHeader(session.token),
-      },
+      headers: this.getAuthHeaders(session.token),
     });
     if (!res.ok) return null;
     return await res.json();
@@ -217,7 +242,7 @@ export class JellyfinService {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
-          "X-Emby-Authorization": this.getAuthHeader(session.token),
+          ...this.getAuthHeaders(session.token),
         },
         body: JSON.stringify({
           ItemId: itemId,
@@ -239,7 +264,7 @@ export class JellyfinService {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
-          "X-Emby-Authorization": this.getAuthHeader(session.token),
+          ...this.getAuthHeaders(session.token),
         },
         body: JSON.stringify({
           ItemId: itemId,
@@ -261,7 +286,7 @@ export class JellyfinService {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
-          "X-Emby-Authorization": this.getAuthHeader(session.token),
+          ...this.getAuthHeaders(session.token),
         },
         body: JSON.stringify({
           ItemId: itemId,
