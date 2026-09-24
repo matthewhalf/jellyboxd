@@ -68,6 +68,7 @@ jobs:
 
       - name: 🛠️ Build iOS Archive
         run: |
+          set -o pipefail
           xcodebuild \
             -workspace ios/Jellyboxd.xcworkspace \
             -scheme Jellyboxd \
@@ -79,7 +80,24 @@ jobs:
             CODE_SIGN_IDENTITY="" \
             CODE_SIGN_ENTITLEMENTS="" \
             CODE_SIGNING_INJECT_BASE_ENTITLEMENTS=NO \
-            archive
+            archive 2>&1 | tee xcodebuild.log
+
+      - name: 🔍 Debug Errors if Build Failed
+        if: failure()
+        run: |
+          echo "=================== XCODEBUILD ERRORS ==================="
+          grep -C 3 -E "(error:|fatal error:|BUILD FAILED|\*\* ARCHIVE FAILED \*\*)" xcodebuild.log || true
+          echo "=================== LAST 100 LINES ==================="
+          tail -n 100 xcodebuild.log
+
+      - name: 📤 Upload Build Logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: xcodebuild-logs
+          path: xcodebuild.log
+          if-no-files-found: ignore
+
 
       - name: 📦 Package Unsigned IPA
         run: |
