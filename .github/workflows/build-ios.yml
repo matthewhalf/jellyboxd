@@ -59,6 +59,33 @@ jobs:
           npx expo prebuild --platform ios --clean
           node ./scripts/patch-expo-modules-jsi.js
 
+      - name: ⚙️ Patch Podfile for Swift 5 Compatibility
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          podfile = Path("ios/Podfile")
+          text = podfile.read_text()
+          marker = "post_install do |installer|"
+          settings = """
+            installer.pods_project.targets.each do |target|
+              target.build_configurations.each do |config|
+                config.build_settings['SWIFT_VERSION'] = '5.0'
+                config.build_settings['SWIFT_STRICT_CONCURRENCY'] = 'minimal'
+              end
+            end
+          """
+          if marker in text and "SWIFT_STRICT_CONCURRENCY" not in text:
+              text = text.replace(marker, marker + settings)
+              podfile.write_text(text)
+              print("✅ Patched Podfile with Swift 5 compatibility settings")
+          else:
+              print("⏭ Podfile already patched or marker not found")
+          PY
+
+      - name: 🔄 Re-install Pods with patched Podfile
+        run: |
+          cd ios && pod install
+
       - name: 🔗 Configure Xcode Node Environment
         run: |
           NODE_PATH="$(which node)"
@@ -75,6 +102,8 @@ jobs:
             -configuration Release \
             -destination 'generic/platform=iOS' \
             -archivePath "$PWD/build/Jellyboxd.xcarchive" \
+            SWIFT_VERSION=5.0 \
+            SWIFT_STRICT_CONCURRENCY=minimal \
             CODE_SIGNING_ALLOWED=NO \
             CODE_SIGNING_REQUIRED=NO \
             CODE_SIGN_IDENTITY="" \
