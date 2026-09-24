@@ -1,56 +1,75 @@
-# Welcome to your Expo app 👋
+# 🎬 Jellyboxd
 
-This is an [Expo](https://expo.dev) project created with [`create-expo-app`](https://www.npmjs.com/package/create-expo-app).
+<div align="center">
+  <img src="assets/images/icon.png" width="128" height="128" alt="Jellyboxd Logo" />
+  <h3>A sleek, Letterboxd-inspired Jellyfin client for iOS</h3>
+</div>
 
-## Get started
+---
 
-1. Install dependencies
+## ✨ Features
 
+- 🖤 **Letterboxd Aesthetic**: Deep dark theme (`#14181c`) with signature accent (`#00e054`), poster-first grid browsing, and clean typography.
+- 🔐 **Jellyfin Authentication**: Connect seamlessly to any Jellyfin server with secure token storage.
+- 🍿 **Continue Watching**: Pick up right where you left off with accurate resume positions and visual progress indicators.
+- 📚 **Library Exploration**: Browse Movies, Series, and Collections with community ratings and release metadata.
+- 🎬 **Modern Video Player**: Fast native video playback powered by `expo-video` with automatic Jellyfin playback progress syncing (`/Sessions/Playing`, `/Progress`, `/Stopped`).
+- 🍏 **One-Click iOS Build**: GitHub Actions workflow automatically produces an unsigned `.ipa` ready for sideloading (AltStore, Sideloadly, TrollStore).
+
+---
+
+## 🚀 Getting Started
+
+### Prerequisites
+
+- [Node.js](https://nodejs.org/) (v20+)
+- [Bun](https://bun.sh/) (recommended) or npm
+- [Expo CLI](https://docs.expo.dev/)
+
+### Installation
+
+1. Clone the repository:
    ```bash
-   npm install
+   git clone git@github.com:matthewhalf/jellyboxd.git
+   cd jellyboxd
    ```
 
-2. Start the app
-
+2. Install dependencies:
    ```bash
-   npx expo start
+   bun install
    ```
 
-In the output, you'll find options to open the app in a
+3. Start the development server:
+   ```bash
+   bun run start
+   ```
 
-- [development build](https://docs.expo.dev/develop/development-builds/introduction/)
-- [Android emulator](https://docs.expo.dev/workflow/android-studio-emulator/)
-- [iOS simulator](https://docs.expo.dev/workflow/ios-simulator/)
-- [Expo Go](https://expo.dev/go), a limited sandbox for trying out app development with Expo
+---
 
-You can start developing by editing the files inside the **app** directory. This project uses [file-based routing](https://docs.expo.dev/router/introduction).
+## 🍏 Building the iOS IPA
 
-## Get a fresh project
+A GitHub Actions workflow is included in [`.github/workflows/build-ios.yml`](.github/workflows/build-ios.yml).
 
-When you're ready, run:
+- Every push to `main` builds an unsigned `.ipa`.
+- The `.ipa` can be downloaded directly from the **Actions** tab artifacts.
+- Install the `.ipa` using:
+  - **AltStore** / **SideStore**
+  - **Sideloadly**
+  - **TrollStore** (if on supported iOS version)
 
-```bash
-npm run reset-project
-```
+---
 
-This command will move the starter code to the **app-example** directory and create a blank **app** directory where you can start developing.
+## 🛠️ Tech Stack
 
-### Other setup steps
+- **Framework**: [Expo SDK 52+](https://expo.dev) + [React Native 0.86](https://reactnative.dev)
+- **Routing**: [Expo Router](https://docs.expo.dev/router/introduction/) (File-based navigation)
+- **SDK**: [`@jellyfin/sdk`](https://github.com/jellyfin/jellyfin-sdk-typescript)
+- **Video Engine**: [`expo-video`](https://docs.expo.dev/versions/latest/sdk/video/)
+- **Icons**: `@expo/vector-icons` (Ionicons)
+- **Storage**: `@react-native-async-storage/async-storage` & `expo-secure-store`
 
-- To set up ESLint for linting, run `npx expo lint`, or follow our guide on ["Using ESLint and Prettier"](https://docs.expo.dev/guides/using-eslint/)
-- If you'd like to set up unit testing, follow our guide on ["Unit Testing with Jest"](https://docs.expo.dev/develop/unit-testing/)
-- Learn more about the TypeScript setup in this template in our guide on ["Using TypeScript"](https://docs.expo.dev/guides/typescript/)
+---
 
-## Learn more
+## 📄 License
 
-To learn more about developing your project with Expo, look at the following resources:
-
-- [Expo documentation](https://docs.expo.dev/): Learn fundamentals, or go into advanced topics with our [guides](https://docs.expo.dev/guides).
-- [Learn Expo tutorial](https://docs.expo.dev/tutorial/introduction/): Follow a step-by-step tutorial where you'll create a project that runs on Android, iOS, and the web.
-
-## Join the community
-
-Join our community of developers creating universal apps.
-
-- [Expo on GitHub](https://github.com/expo/expo): View our open source platform and contribute.
-- [Discord community](https://chat.expo.dev): Chat with Expo users and ask questions.
+MIT License.
