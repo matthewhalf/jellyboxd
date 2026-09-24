@@ -37,6 +37,39 @@ if (fs.existsSync(jsiDir)) {
     }
   }
 
+  // 3. Fix @unchecked Sendable on classes with mutable weak runtime references
+  const sendablePatches = [
+    {
+      file: path.join(jsiDir, 'apple', 'Sources', 'ExpoModulesJSI', 'Runtime', 'JavaScriptPropNameID.swift'),
+      find: /public final class JavaScriptPropNameID:\s*JavaScriptType(?!\s*,\s*@unchecked Sendable)/g,
+      replace: 'public final class JavaScriptPropNameID: JavaScriptType, @unchecked Sendable',
+      name: 'JavaScriptPropNameID.swift'
+    },
+    {
+      file: path.join(jsiDir, 'apple', 'Sources', 'ExpoModulesJSI', 'Runtime', 'Values', 'JavaScriptValue.swift'),
+      find: /public final class JavaScriptValue:\s*JavaScriptType,\s*Equatable,\s*Escapable(?!\s*,\s*@unchecked Sendable)/g,
+      replace: 'public final class JavaScriptValue: JavaScriptType, Equatable, Escapable, @unchecked Sendable',
+      name: 'JavaScriptValue.swift'
+    },
+    {
+      file: path.join(jsiDir, 'apple', 'Sources', 'ExpoModulesJSI', 'Runtime', 'Values', 'JavaScriptError.swift'),
+      find: /public final class JavaScriptError:\s*Error,\s*Sendable\b/g,
+      replace: 'public final class JavaScriptError: Error, @unchecked Sendable',
+      name: 'JavaScriptError.swift'
+    }
+  ];
+
+  for (const patch of sendablePatches) {
+    if (fs.existsSync(patch.file)) {
+      let content = fs.readFileSync(patch.file, 'utf8');
+      if (patch.find.test(content)) {
+        content = content.replace(patch.find, patch.replace);
+        fs.writeFileSync(patch.file, content, 'utf8');
+        console.log(`  ✓ Patched @unchecked Sendable in: ${patch.name}`);
+      }
+    }
+  }
+
   console.log('✅ expo-modules-jsi patch applied successfully.');
 } else {
   console.log('⚠️ expo-modules-jsi directory not found, skipping patch.');
