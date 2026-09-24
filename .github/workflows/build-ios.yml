@@ -16,7 +16,7 @@ concurrency:
 jobs:
   build-ios:
     name: 📦 Build Unsigned iOS IPA
-    runs-on: macos-15
+    runs-on: macos-14
 
     steps:
       - name: 📥 Checkout repository
@@ -37,6 +37,14 @@ jobs:
         with:
           xcode-version: '16.2'
 
+      - name: ✅ Verify iOS SDK
+        run: |
+          xcodebuild -version
+          xcodebuild -showsdks
+          SDK_PATH="$(xcrun --sdk iphoneos --show-sdk-path)"
+          echo "iPhoneOS SDK found at: $SDK_PATH"
+          test -d "$SDK_PATH"
+
       - name: 📦 Install Dependencies
         run: |
           bun install
@@ -47,11 +55,12 @@ jobs:
 
       - name: 🛠️ Build iOS Archive
         run: |
-          xcodebuild -workspace ios/Jellyboxd.xcworkspace \
+          xcodebuild \
+            -workspace ios/Jellyboxd.xcworkspace \
             -scheme Jellyboxd \
             -configuration Release \
             -destination 'generic/platform=iOS' \
-            -archivePath $PWD/build/Jellyboxd.xcarchive \
+            -archivePath "$PWD/build/Jellyboxd.xcarchive" \
             CODE_SIGNING_ALLOWED=NO \
             CODE_SIGNING_REQUIRED=NO \
             CODE_SIGN_IDENTITY="" \
