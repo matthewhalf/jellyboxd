@@ -85,7 +85,7 @@ export default function HomeScreen() {
         contentContainerStyle={styles.scrollContent}
         refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor="#00e054" />}
       >
-        {/* 1. Continue Watching Section */}
+        {/* 1. Continue Watching Section (Horizontal Widescreen Cards) */}
         {resumeItems.length > 0 && (
           <View style={styles.section}>
             <View style={styles.sectionHeader}>
@@ -95,11 +95,19 @@ export default function HomeScreen() {
             <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.horizontalList}>
               {resumeItems.map((item) => {
                 const percent = Math.round(item.UserData?.PlayedPercentage || 0);
-                const imageUrl = JellyfinService.getImageUrl(session.serverUrl, item.Id, "Primary", 350);
-                const titleText =
-                  item.Type === "Episode"
-                    ? `${item.SeriesName || ""} S${item.ParentIndexNumber ?? 1}E${item.IndexNumber ?? 1}`
-                    : item.Name;
+                const imageUrl = JellyfinService.getImageUrl(
+                  session.serverUrl,
+                  item.Id,
+                  item.Type === "Episode" ? "Thumb" : "Backdrop",
+                  450
+                );
+
+                let remainingText = "";
+                if (item.RunTimeTicks) {
+                  const remainingTicks = item.RunTimeTicks * (1 - (percent > 0 ? percent : 20) / 100);
+                  const remainingMins = Math.max(1, Math.round(remainingTicks / (10000000 * 60)));
+                  remainingText = `${remainingMins} min rimasti`;
+                }
 
                 return (
                   <Pressable
@@ -107,13 +115,30 @@ export default function HomeScreen() {
                     style={styles.resumeCard}
                     onPress={() => router.push(`/player/${item.Id}`)}
                   >
-                    <Image source={{ uri: imageUrl }} style={styles.resumePoster} resizeMode="cover" />
-                    <View style={styles.progressBarBg}>
-                      <View style={[styles.progressBarFill, { width: `${percent}%` }]} />
+                    <View style={styles.resumeThumbnailContainer}>
+                      <Image source={{ uri: imageUrl }} style={styles.resumeThumbnail} resizeMode="cover" />
+                      {remainingText !== "" && (
+                        <View style={styles.timeBadge}>
+                          <Ionicons name="time-outline" size={10} color="#ffffff" />
+                          <Text style={styles.timeText}>{remainingText}</Text>
+                        </View>
+                      )}
+                      <View style={styles.resumePlayOverlay}>
+                        <Ionicons name="play-circle" size={32} color="rgba(255,255,255,0.9)" />
+                      </View>
+                      <View style={styles.progressBarBg}>
+                        <View style={[styles.progressBarFill, { width: `${percent}%` }]} />
+                      </View>
                     </View>
-                    <Text style={styles.cardTitle} numberOfLines={1}>
-                      {titleText}
+
+                    <Text style={styles.resumeCardTitle} numberOfLines={1}>
+                      {item.Type === "Episode" ? (item.SeriesName || item.Name) : item.Name}
                     </Text>
+                    {item.Type === "Episode" && (
+                      <Text style={styles.resumeCardSub} numberOfLines={1}>
+                        S{item.ParentIndexNumber ?? 1}:E{item.IndexNumber ?? 1} • {item.Name}
+                      </Text>
+                    )}
                   </Pressable>
                 );
               })}
@@ -267,17 +292,17 @@ const styles = StyleSheet.create({
     padding: 6,
   },
   scrollContent: {
-    paddingVertical: 16,
+    paddingVertical: 14,
     paddingBottom: 40,
   },
   section: {
-    marginBottom: 28,
+    marginBottom: 16,
   },
   sectionHeader: {
     flexDirection: "row",
     alignItems: "center",
     paddingHorizontal: 20,
-    marginBottom: 12,
+    marginBottom: 10,
     gap: 8,
   },
   sectionTitle: {
@@ -300,31 +325,74 @@ const styles = StyleSheet.create({
     gap: 12,
   },
   resumeCard: {
-    width: 140,
+    width: 210,
   },
-  resumePoster: {
-    width: 140,
-    height: 200,
+  resumeThumbnailContainer: {
+    width: 210,
+    height: 118,
     borderRadius: 8,
     backgroundColor: "#1f252c",
+    overflow: "hidden",
+    position: "relative",
+    borderWidth: 1,
+    borderColor: "rgba(255,255,255,0.08)",
+  },
+  resumeThumbnail: {
+    width: "100%",
+    height: "100%",
+  },
+  timeBadge: {
+    position: "absolute",
+    top: 8,
+    right: 8,
+    backgroundColor: "rgba(0, 0, 0, 0.75)",
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 4,
+    paddingHorizontal: 6,
+    paddingVertical: 3,
+    borderRadius: 4,
+  },
+  timeText: {
+    color: "#ffffff",
+    fontSize: 10,
+    fontWeight: "700",
+  },
+  resumePlayOverlay: {
+    ...StyleSheet.absoluteFill,
+    backgroundColor: "rgba(0,0,0,0.2)",
+    justifyContent: "center",
+    alignItems: "center",
   },
   progressBarBg: {
-    height: 4,
-    backgroundColor: "#2c3440",
-    borderRadius: 2,
-    marginTop: 6,
-    overflow: "hidden",
+    position: "absolute",
+    bottom: 0,
+    left: 0,
+    right: 0,
+    height: 3,
+    backgroundColor: "rgba(0,0,0,0.5)",
   },
   progressBarFill: {
     height: "100%",
     backgroundColor: "#00e054",
   },
+  resumeCardTitle: {
+    color: "#ffffff",
+    fontSize: 13,
+    fontWeight: "700",
+    marginTop: 6,
+  },
+  resumeCardSub: {
+    color: "#89a",
+    fontSize: 11,
+    marginTop: 2,
+  },
   posterCard: {
-    width: 120,
+    width: 115,
   },
   posterImage: {
-    width: 120,
-    height: 175,
+    width: 115,
+    height: 170,
     borderRadius: 8,
     backgroundColor: "#1f252c",
   },
@@ -347,7 +415,7 @@ const styles = StyleSheet.create({
   },
   cardTitle: {
     color: "#ffffff",
-    fontSize: 13,
+    fontSize: 12,
     fontWeight: "600",
     marginTop: 6,
   },
@@ -360,8 +428,8 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     flexWrap: "wrap",
     paddingHorizontal: 20,
-    gap: 12,
-    marginTop: 12,
+    gap: 10,
+    marginTop: 4,
   },
   libraryCard: {
     width: "48%",
@@ -369,18 +437,18 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: "#2c3440",
     borderRadius: 12,
-    padding: 18,
+    padding: 16,
     alignItems: "flex-start",
   },
   libraryName: {
     color: "#ffffff",
-    fontSize: 16,
+    fontSize: 15,
     fontWeight: "700",
-    marginTop: 10,
+    marginTop: 8,
   },
   librarySub: {
     color: "#677b8c",
     fontSize: 12,
-    marginTop: 4,
+    marginTop: 3,
   },
 });

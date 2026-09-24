@@ -10,7 +10,6 @@ import {
   Text,
   View,
 } from "react-native";
-import { SafeAreaView } from "react-native-safe-area-context";
 import { useAuth } from "../../context/AuthContext";
 import { JellyfinItem, JellyfinService } from "../../services/jellyfin";
 
@@ -68,7 +67,6 @@ export default function PlayerScreen() {
 
     return () => {
       clearInterval(interval);
-      // Safe cleanup without accessing player (which could already be deallocated)
       try {
         JellyfinService.reportPlaybackStopped(session, id, lastReportedTicks.current);
       } catch {}
@@ -94,11 +92,6 @@ export default function PlayerScreen() {
     );
   }
 
-  const titleText =
-    item.Type === "Episode"
-      ? `${item.SeriesName || ""} - S${item.ParentIndexNumber ?? 1}E${item.IndexNumber ?? 1}`
-      : item.Name;
-
   return (
     <View style={styles.container}>
       <StatusBar hidden />
@@ -109,14 +102,13 @@ export default function PlayerScreen() {
         allowsPictureInPicture
         contentFit="contain"
       />
-      <SafeAreaView style={styles.overlay}>
-        <Pressable style={styles.closeButton} onPress={handleClose}>
-          <Ionicons name="close" size={28} color="#ffffff" />
-        </Pressable>
-        <Text style={styles.title} numberOfLines={1}>
-          {titleText}
-        </Text>
-      </SafeAreaView>
+      {/* Floating close button on top-left: completely clear of AirPlay/PiP on the top-right */}
+      <Pressable
+        style={({ pressed }) => [styles.closeButton, pressed && styles.closeButtonPressed]}
+        onPress={handleClose}
+      >
+        <Ionicons name="close" size={22} color="#ffffff" />
+      </Pressable>
     </View>
   );
 }
@@ -140,26 +132,22 @@ const styles = StyleSheet.create({
   video: {
     ...StyleSheet.absoluteFill,
   },
-  overlay: {
-    position: "absolute",
-    top: 10,
-    left: 10,
-    right: 10,
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 12,
-  },
   closeButton: {
-    backgroundColor: "rgba(0,0,0,0.6)",
-    padding: 8,
-    borderRadius: 20,
+    position: "absolute",
+    top: 50,
+    left: 16,
+    zIndex: 30,
+    width: 38,
+    height: 38,
+    borderRadius: 19,
+    backgroundColor: "rgba(20, 24, 28, 0.75)",
+    justifyContent: "center",
+    alignItems: "center",
+    borderWidth: 1,
+    borderColor: "rgba(255, 255, 255, 0.2)",
   },
-  title: {
-    color: "#ffffff",
-    fontSize: 16,
-    fontWeight: "700",
-    flex: 1,
-    textShadowColor: "rgba(0,0,0,0.8)",
-    textShadowRadius: 4,
+  closeButtonPressed: {
+    opacity: 0.7,
+    transform: [{ scale: 0.95 }],
   },
 });

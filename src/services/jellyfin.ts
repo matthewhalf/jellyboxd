@@ -193,13 +193,46 @@ export class JellyfinService {
   }
 
   static async fetchResumeItems(session: JellyfinSession): Promise<JellyfinItem[]> {
-    const url = `${session.serverUrl}/UserViews/${session.userId}/Items?Recursive=true&Filters=IsResumable&SortBy=DatePlayed&SortOrder=Descending&Limit=15`;
+    const url = `${session.serverUrl}/Users/${session.userId}/Items/Resume?Limit=12&Fields=Overview,RunTimeTicks,UserData,PrimaryImageAspectRatio`;
     const res = await fetch(url, {
       headers: this.getAuthHeaders(session.token),
     });
     if (!res.ok) return [];
     const data = await res.json();
-    return data.Items || [];
+    const rawItems: JellyfinItem[] = data.Items || [];
+
+    const resolvedItems: JellyfinItem[] = await Promise.all(
+      rawItems.map(async (item) => {
+        if (item.Type === "Season" && item.SeriesId) {
+          try {
+            const episodes = await this.fetchEpisodes(session, item.SeriesId, item.Id);
+            const nextEp = episodes.find((e) => !e.UserData?.Played) || episodes[0];
+            if (nextEp) {
+              return {
+                ...nextEp,
+                SeriesName: item.SeriesName || nextEp.SeriesName,
+                UserData: {
+                  ...nextEp.UserData,
+                  PlayedPercentage: nextEp.UserData?.PlayedPercentage || item.UserData?.PlayedPercentage || 25,
+                },
+              };
+            }
+          } catch {}
+        } else if (item.Type === "Series") {
+          try {
+            const seasons = await this.fetchSeasons(session, item.Id);
+            if (seasons.length > 0) {
+              const episodes = await this.fetchEpisodes(session, item.Id, seasons[0].Id);
+              const nextEp = episodes.find((e) => !e.UserData?.Played) || episodes[0];
+              if (nextEp) return nextEp;
+            }
+          } catch {}
+        }
+        return item;
+      })
+    );
+
+    return resolvedItems;
   }
 
   static async fetchLibraries(session: JellyfinSession): Promise<JellyfinItem[]> {
