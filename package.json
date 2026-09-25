@@ -2,6 +2,7 @@
   "name": "jellyboxd",
   "main": "expo-router/entry",
   "version": "1.0.0",
+  "packageManager": "bun@1.4.2",
   "dependencies": {
     "@expo/ui": "~57.0.20",
     "@expo/vector-icons": "^15.1.1",
