@@ -341,31 +341,30 @@ if (fs.existsSync(jsiDir)) {
   }
 
   // ───────────────────────────────────────────────────────────────────────────
-  // 7. Task+immediate.swift: Wrap operation closure in NonisolatedUnsafeVar
+  // 7. Task+immediate.swift: Remove @isolated(any) which requires iOS 18+
+  //    and wrap operation in NonisolatedUnsafeVar
   // ───────────────────────────────────────────────────────────────────────────
   const taskSwiftPath = path.join(jsiDir, 'apple', 'Sources', 'ExpoModulesJSI', 'Extensions', 'Task+immediate.swift');
   if (fs.existsSync(taskSwiftPath)) {
-    let content = fs.readFileSync(taskSwiftPath, 'utf8');
-    const oldTask = `    if #available(macOS 26.0, iOS 26.0, watchOS 26.0, tvOS 26.0, *) {
-      return Task.immediate(name: name, priority: priority, operation: operation)
-    } else {
-      // In the polyfill always use the highest priority and hope it executes earlier.
-      return Task(name: name, priority: .high, operation: operation)
-    }`;
+    const replacement = `// swift-format-ignore-file: AlwaysUseLowerCamelCase
 
-    const newTask = `    let opVar = NonisolatedUnsafeVar(operation)
-    if #available(macOS 26.0, iOS 26.0, watchOS 26.0, tvOS 26.0, *) {
-      return Task.immediate(name: name, priority: priority, operation: opVar.value)
-    } else {
-      return Task(name: name, priority: .high, operation: opVar.value)
-    }`;
-
-    if (content.includes(oldTask)) {
-      content = content.replace(oldTask, newTask);
-      fs.writeFileSync(taskSwiftPath, content, 'utf8');
-      console.log('  ✓ Fixed operation capture in Task+immediate.swift');
-      patchCount++;
+extension Task where Failure == any Error {
+  @discardableResult
+  public static func immediate_polyfill(
+    name: String? = nil,
+    priority: TaskPriority? = nil,
+    @_inheritActorContext @_implicitSelfCapture operation: @escaping () async throws -> Success
+  ) -> Task<Success, any Error> {
+    let opVar = NonisolatedUnsafeVar(operation)
+    return Task(name: name, priority: priority ?? .high) {
+      try await opVar.value()
     }
+  }
+}
+`;
+    fs.writeFileSync(taskSwiftPath, replacement, 'utf8');
+    console.log('  ✓ Rewrote Task+immediate.swift without @isolated(any)');
+    patchCount++;
   }
 
   // ───────────────────────────────────────────────────────────────────────────
@@ -492,7 +491,6 @@ if (fs.existsSync(jsiDir)) {
     path.join(jsiDir, 'apple', 'Sources', 'ExpoModulesJSI', 'Runtime', 'Values', 'JavaScriptPromise.swift'),
     path.join(jsiDir, 'apple', 'Sources', 'ExpoModulesJSI', 'Utilities', 'DeferredPromise.swift'),
     path.join(jsiDir, 'apple', 'Sources', 'ExpoModulesJSI', 'Runtime', 'JavaScriptActor.swift'),
-    path.join(jsiDir, 'apple', 'Sources', 'ExpoModulesJSI', 'Extensions', 'Task+immediate.swift'),
     path.join(jsiDir, 'apple', 'Sources', 'ExpoModulesJSI', 'Runtime', 'JavaScriptRef.swift'),
   ];
 
