@@ -212,22 +212,8 @@ if (fs.existsSync(jsiDir)) {
     }
   }
 
-  // ───────────────────────────────────────────────────────────────────────────
-  // 6. Task+immediate.swift:
-  //    Fix iOS availability check from typo iOS 26.0 to iOS 18.0
-  // ───────────────────────────────────────────────────────────────────────────
-  const taskSwiftPath = path.join(jsiDir, 'apple', 'Sources', 'ExpoModulesJSI', 'Extensions', 'Task+immediate.swift');
-  if (fs.existsSync(taskSwiftPath)) {
-    let content = fs.readFileSync(taskSwiftPath, 'utf8');
-    if (content.includes('macOS 26.0, iOS 26.0')) {
-      content = content.replace('macOS 26.0, iOS 26.0, watchOS 26.0, tvOS 26.0', 'macOS 15.0, iOS 18.0, watchOS 11.0, tvOS 18.0');
-      fs.writeFileSync(taskSwiftPath, content, 'utf8');
-      console.log('  ✓ Fixed Task+immediate.swift availability check');
-      patchCount++;
-    }
-  }
-
   console.log(`✅ expo-modules-jsi patch complete (${patchCount} patches applied, ABI preserved).`);
 } else {
   console.log('⚠️ expo-modules-jsi directory not found, skipping patch.');
 }
+
