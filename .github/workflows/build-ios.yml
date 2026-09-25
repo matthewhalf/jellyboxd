@@ -59,7 +59,7 @@ jobs:
           npx expo prebuild --platform ios --clean
           node ./scripts/patch-expo-modules-jsi.js
 
-      - name: ⚙️ Patch Podfile for Swift 5 Compatibility
+      - name: ⚙️ Configure Podfile Concurrency Settings
         run: |
           python3 - <<'PY'
           from pathlib import Path
@@ -69,21 +69,19 @@ jobs:
           settings = """
             installer.pods_project.targets.each do |target|
               target.build_configurations.each do |config|
-                config.build_settings['SWIFT_VERSION'] = '5.0'
-                config.build_settings['SWIFT_STRICT_CONCURRENCY'] = 'minimal'
+                config.build_settings['SWIFT_STRICT_CONCURRENCY'] = 'targeted'
+                config.build_settings['SWIFT_TREAT_WARNINGS_AS_ERRORS'] = 'NO'
+                config.build_settings['GCC_TREAT_WARNINGS_AS_ERRORS'] = 'NO'
               end
             end
           """
           if marker in text and "SWIFT_STRICT_CONCURRENCY" not in text:
               text = text.replace(marker, marker + settings)
               podfile.write_text(text)
-              print("✅ Patched Podfile with Swift 5 compatibility settings")
+              print("✅ Patched Podfile with relaxed concurrency settings")
           else:
               print("⏭ Podfile already patched or marker not found")
           PY
-
-      - name: 🔄 Re-install Pods with patched Podfile
-        run: |
           cd ios && pod install
 
       - name: 🔗 Configure Xcode Node Environment
@@ -92,6 +90,12 @@ jobs:
           echo "export NODE_BINARY=\"$NODE_PATH\"" > ios/.xcode.env.local
           echo "export PATH=\"$(dirname "$NODE_PATH"):$PATH\"" >> ios/.xcode.env.local
           cat ios/.xcode.env.local
+
+      - name: 🔨 Pre-compile ExpoModulesJSI xcframework
+        run: |
+          export PODS_ROOT="$PWD/ios/Pods"
+          export PLATFORM_NAME=iphoneos
+          bash ./node_modules/expo-modules-jsi/apple/scripts/build-xcframework.sh
 
       - name: 🛠️ Build iOS Archive
         run: |
@@ -102,8 +106,8 @@ jobs:
             -configuration Release \
             -destination 'generic/platform=iOS' \
             -archivePath "$PWD/build/Jellyboxd.xcarchive" \
-            SWIFT_VERSION=5.0 \
-            SWIFT_STRICT_CONCURRENCY=minimal \
+            SWIFT_STRICT_CONCURRENCY=targeted \
+            SWIFT_TREAT_WARNINGS_AS_ERRORS=NO \
             CODE_SIGNING_ALLOWED=NO \
             CODE_SIGNING_REQUIRED=NO \
             CODE_SIGN_IDENTITY="" \
@@ -114,10 +118,17 @@ jobs:
       - name: 🔍 Debug Errors if Build Failed
         if: failure()
         run: |
-          echo "=================== XCODEBUILD ERRORS ==================="
-          grep -C 3 -E "(error:|fatal error:|BUILD FAILED|\*\* ARCHIVE FAILED \*\*)" xcodebuild.log || true
-          echo "=================== LAST 100 LINES ==================="
-          tail -n 100 xcodebuild.log
+          echo "=================== SWIFT COMPILATION ERRORS ==================="
+          grep -E "(error:.*swift|\.swift:[0-9]+:[0-9]+: error)" xcodebuild.log | head -50 || true
+          echo ""
+          echo "=================== GENERAL BUILD ERRORS ==================="
+          grep -E "^.*error:" xcodebuild.log | head -50 || true
+          echo ""
+          echo "=================== ARCHIVE FAILED CONTEXT ==================="
+          grep -B20 "ARCHIVE FAILED" xcodebuild.log | tail -40 || true
+          echo ""
+          echo "=================== LAST 150 LINES ==================="
+          tail -n 150 xcodebuild.log
 
       - name: 📤 Upload Build Logs
         if: always()
@@ -126,7 +137,6 @@ jobs:
           name: xcodebuild-logs
           path: xcodebuild.log
           if-no-files-found: ignore
-
 
       - name: 📦 Package Unsigned IPA
         run: |
