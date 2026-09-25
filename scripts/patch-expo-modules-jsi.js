@@ -9,8 +9,8 @@ if (fs.existsSync(jsiDir)) {
 
   // ───────────────────────────────────────────────────────────────────────────
   // 1. Package.swift:
-  //    - Remove experimental features (NonisolatedNonsendingByDefault, InferIsolatedConformances)
-  //    - Add -strict-concurrency=targeted to unsafeFlags
+  //    - Remove experimental upcoming features (NonisolatedNonsendingByDefault, InferIsolatedConformances)
+  //    - Clean up any stray compiler flags
   // ───────────────────────────────────────────────────────────────────────────
   const packageSwiftPath = path.join(jsiDir, 'apple', 'Package.swift');
   if (fs.existsSync(packageSwiftPath)) {
@@ -26,25 +26,14 @@ if (fs.existsSync(jsiDir)) {
       content = content.replace(/\s*\.enableUpcomingFeature\("InferIsolatedConformances"\),?/g, '');
       changed = true;
     }
-
-    // Add -strict-concurrency=targeted to unsafeFlags
-    if (!content.includes('"-strict-concurrency=targeted"')) {
-      content = content.replace(
-        '".unsafeFlags([',
-        '".unsafeFlags([\n          "-strict-concurrency=targeted",'
-      );
-      if (!content.includes('"-strict-concurrency=targeted"')) {
-        content = content.replace(
-          '.unsafeFlags([',
-          '.unsafeFlags([\n          "-strict-concurrency=targeted",'
-        );
-      }
+    if (content.includes('"-strict-concurrency=targeted"')) {
+      content = content.replace(/\s*"-strict-concurrency=targeted",?/g, '');
       changed = true;
     }
 
     if (changed) {
       fs.writeFileSync(packageSwiftPath, content, 'utf8');
-      console.log('  ✓ Patched Package.swift: relaxed concurrency to targeted and removed experimental features');
+      console.log('  ✓ Patched Package.swift: removed experimental upcoming features');
       patchCount++;
     } else {
       console.log('  ⏭ Package.swift already up to date');
@@ -53,8 +42,8 @@ if (fs.existsSync(jsiDir)) {
 
   // ───────────────────────────────────────────────────────────────────────────
   // 2. build-xcframework.sh:
-  //    - Remove -quiet so build output / errors are visible
-  //    - Inject SWIFT_STRICT_CONCURRENCY=targeted and SWIFT_TREAT_WARNINGS_AS_ERRORS=NO into xcodebuild
+  //    - Remove -quiet so build output / errors are visible in CI
+  //    - Add SWIFT_TREAT_WARNINGS_AS_ERRORS=NO so warnings never break the build
   // ───────────────────────────────────────────────────────────────────────────
   const buildScriptPath = path.join(jsiDir, 'apple', 'scripts', 'build-xcframework.sh');
   if (fs.existsSync(buildScriptPath)) {
@@ -68,14 +57,20 @@ if (fs.existsSync(jsiDir)) {
       console.log('  ✓ Removed -quiet from build-xcframework.sh');
     }
 
-    // Inject settings into the xcodebuild command inside build_slice()
-    if (!content.includes('SWIFT_STRICT_CONCURRENCY=targeted')) {
+    // Clean up any old injected concurrency flags
+    if (content.includes('SWIFT_STRICT_CONCURRENCY=targeted \\\n')) {
+      content = content.replace('SWIFT_STRICT_CONCURRENCY=targeted \\\n', '');
+      changed = true;
+    }
+
+    // Inject SWIFT_TREAT_WARNINGS_AS_ERRORS=NO
+    if (!content.includes('SWIFT_TREAT_WARNINGS_AS_ERRORS=NO')) {
       content = content.replace(
         'SWIFT_COMPILATION_MODE=wholemodule \\',
-        'SWIFT_COMPILATION_MODE=wholemodule \\\n    SWIFT_STRICT_CONCURRENCY=targeted \\\n    SWIFT_TREAT_WARNINGS_AS_ERRORS=NO \\'
+        'SWIFT_COMPILATION_MODE=wholemodule \\\n    SWIFT_TREAT_WARNINGS_AS_ERRORS=NO \\'
       );
       changed = true;
-      console.log('  ✓ Added SWIFT_STRICT_CONCURRENCY=targeted to build-xcframework.sh');
+      console.log('  ✓ Added SWIFT_TREAT_WARNINGS_AS_ERRORS=NO to build-xcframework.sh');
     }
 
     if (changed) {
