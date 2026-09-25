@@ -4,42 +4,11 @@ const path = require('path');
 const jsiDir = path.join(__dirname, '..', 'node_modules', 'expo-modules-jsi');
 
 if (fs.existsSync(jsiDir)) {
-  console.log('🩹 Patching expo-modules-jsi for Swift 6 / Xcode 26 compatibility...');
+  console.log('🩹 Patching expo-modules-jsi for Swift 6 / Xcode 26 compatibility (preserving ABI & sending symbols)...');
   let patchCount = 0;
 
   // ───────────────────────────────────────────────────────────────────────────
-  // 1. Package.swift:
-  //    - Remove experimental upcoming features (NonisolatedNonsendingByDefault, InferIsolatedConformances)
-  // ───────────────────────────────────────────────────────────────────────────
-  const packageSwiftPath = path.join(jsiDir, 'apple', 'Package.swift');
-  if (fs.existsSync(packageSwiftPath)) {
-    let content = fs.readFileSync(packageSwiftPath, 'utf8');
-    let changed = false;
-
-    if (content.includes('.enableUpcomingFeature("NonisolatedNonsendingByDefault")')) {
-      content = content.replace(/\s*\.enableUpcomingFeature\("NonisolatedNonsendingByDefault"\),?/g, '');
-      changed = true;
-    }
-    if (content.includes('.enableUpcomingFeature("InferIsolatedConformances")')) {
-      content = content.replace(/\s*\.enableUpcomingFeature\("InferIsolatedConformances"\),?/g, '');
-      changed = true;
-    }
-    if (content.includes('"-strict-concurrency=targeted"')) {
-      content = content.replace(/\s*"-strict-concurrency=targeted",?/g, '');
-      changed = true;
-    }
-
-    if (changed) {
-      fs.writeFileSync(packageSwiftPath, content, 'utf8');
-      console.log('  ✓ Patched Package.swift: removed experimental upcoming features');
-      patchCount++;
-    } else {
-      console.log('  ⏭ Package.swift already up to date');
-    }
-  }
-
-  // ───────────────────────────────────────────────────────────────────────────
-  // 2. build-xcframework.sh:
+  // 1. build-xcframework.sh:
   //    - Remove -quiet so build output / errors are visible in CI
   //    - Add SWIFT_TREAT_WARNINGS_AS_ERRORS=NO so warnings never break the build
   // ───────────────────────────────────────────────────────────────────────────
@@ -77,7 +46,7 @@ if (fs.existsSync(jsiDir)) {
   }
 
   // ───────────────────────────────────────────────────────────────────────────
-  // 3. Fix 'weak let' -> 'weak var' in all Swift files (Swift 6.2 requirement)
+  // 2. Fix 'weak let' -> 'weak var' in all Swift files (Swift 6 requirement: weak must be var)
   // ───────────────────────────────────────────────────────────────────────────
   function replaceInDir(dir) {
     if (!fs.existsSync(dir)) return;
@@ -101,7 +70,7 @@ if (fs.existsSync(jsiDir)) {
   replaceInDir(path.join(jsiDir, 'apple', 'Sources'));
 
   // ───────────────────────────────────────────────────────────────────────────
-  // 4. RuntimeScheduler.h: Fix SWIFT_RETURNS_RETAINED constructors
+  // 3. RuntimeScheduler.h: Fix SWIFT_RETURNS_RETAINED constructors
   // ───────────────────────────────────────────────────────────────────────────
   const headerPath = path.join(jsiDir, 'apple', 'Sources', 'ExpoModulesJSI-Cxx', 'include', 'RuntimeScheduler.h');
   if (fs.existsSync(headerPath)) {
@@ -115,7 +84,7 @@ if (fs.existsSync(jsiDir)) {
   }
 
   // ───────────────────────────────────────────────────────────────────────────
-  // 5. Sendable conformance on classes with mutable weak runtime references
+  // 4. Sendable conformance on classes with mutable weak runtime references
   // ───────────────────────────────────────────────────────────────────────────
   const sendablePatches = [
     {
@@ -170,101 +139,15 @@ if (fs.existsSync(jsiDir)) {
   }
 
   // ───────────────────────────────────────────────────────────────────────────
-  // 6. JavaScriptRuntime.swift:
-  //    - Replace raw pointer captures with NonisolatedUnsafeVar (fixes lines 193, 781, 823)
-  //    - Fix line 476: replace raw `var result` capture with `NonisolatedUnsafeVar`
-  //    - Remove conflicting `sending` annotations from signatures
+  // 5. JavaScriptRuntime.swift:
+  //    - Replace raw pointer captures with NonisolatedUnsafeVar
+  //    - Fix raw `var result` capture with `NonisolatedUnsafeVar`
+  //    - NOTE: Do NOT strip `sending` or alter public method signatures!
   // ───────────────────────────────────────────────────────────────────────────
   const runtimeSwiftPath = path.join(jsiDir, 'apple', 'Sources', 'ExpoModulesJSI', 'Runtime', 'JavaScriptRuntime.swift');
   if (fs.existsSync(runtimeSwiftPath)) {
     let content = fs.readFileSync(runtimeSwiftPath, 'utf8');
     let changed = false;
-
-    // Fix getter resultPtr capture (line 188)
-    if (content.includes('nonisolated(unsafe) let resultPtr = resultPtr\n\n      return withGuaranteedContext')) {
-      content = content.replace(
-        'nonisolated(unsafe) let resultPtr = resultPtr\n\n      return withGuaranteedContext(context) { (context: HostObjectContext, runtime) in\n        return JavaScriptActor.assumeIsolated {\n          return forwardingSwiftErrorsToJS(runtime: runtime) {\n            try context.get(propertyName).writeJSIValue(to: resultPtr)',
-        'let resultPtrVar = NonisolatedUnsafeVar(resultPtr)\n\n      return withGuaranteedContext(context) { (context: HostObjectContext, runtime) in\n        return JavaScriptActor.assumeIsolated {\n          return forwardingSwiftErrorsToJS(runtime: runtime) {\n            try context.get(propertyName).writeJSIValue(to: resultPtrVar.value)'
-      );
-      changed = true;
-      console.log('  ✓ Fixed resultPtr capture in getter (JavaScriptRuntime.swift)');
-    }
-
-    // Fix owning-this createFunctionClosure pointer captures (lines 770-785)
-    const oldFn1 = `    nonisolated(unsafe) let thisPtr = thisPtr
-    nonisolated(unsafe) let argumentsPtr = argumentsPtr
-    nonisolated(unsafe) let resultPtr = resultPtr
-
-    // See \`withGuaranteedContext\` for why neither the context nor the runtime is retained here, and
-    // why the result is written to the caller's slot instead of being returned.
-    return withGuaranteedContext(context) { (context: HostFunctionContext, runtime) in
-      return JavaScriptActor.assumeIsolated {
-        return forwardingSwiftErrorsToJS(runtime: runtime) {
-          let this = UnsafeMutablePointer(mutating: thisPtr).move()
-          let arguments = JavaScriptValuesBuffer(runtime, start: argumentsPtr, count: argumentsCount)
-          let thisValue = JavaScriptValue(runtime, this)
-          try context.call(thisValue, consume arguments).writeJSIValue(to: resultPtr)
-        }
-      }
-    }`;
-
-    const newFn1 = `    let thisPtrVar = NonisolatedUnsafeVar(thisPtr)
-    let argumentsPtrVar = NonisolatedUnsafeVar(argumentsPtr)
-    let resultPtrVar = NonisolatedUnsafeVar(resultPtr)
-
-    return withGuaranteedContext(context) { (context: HostFunctionContext, runtime) in
-      return JavaScriptActor.assumeIsolated {
-        return forwardingSwiftErrorsToJS(runtime: runtime) {
-          let this = UnsafeMutablePointer(mutating: thisPtrVar.value).move()
-          let arguments = JavaScriptValuesBuffer(runtime, start: argumentsPtrVar.value, count: argumentsCount)
-          let thisValue = JavaScriptValue(runtime, this)
-          try context.call(thisValue, consume arguments).writeJSIValue(to: resultPtrVar.value)
-        }
-      }
-    }`;
-
-    if (content.includes(oldFn1)) {
-      content = content.replace(oldFn1, newFn1);
-      changed = true;
-      console.log('  ✓ Fixed pointer captures in createFunctionClosure owning-this (JavaScriptRuntime.swift)');
-    }
-
-    // Fix unowned-this createFunctionClosure pointer captures (lines 810-825)
-    const oldFn2 = `    nonisolated(unsafe) let thisPtr = thisPtr
-    nonisolated(unsafe) let argumentsPtr = argumentsPtr
-    nonisolated(unsafe) let resultPtr = resultPtr
-
-    // See \`withGuaranteedContext\` for why neither the context nor the runtime is retained here, and
-    // why the result is written to the caller's slot instead of being returned.
-    return withGuaranteedContext(context) { (context: UnownedThisHostFunctionContext, runtime) in
-      return JavaScriptActor.assumeIsolated {
-        return forwardingSwiftErrorsToJS(runtime: runtime) {
-          let arguments = JavaScriptValuesBuffer(runtime, start: argumentsPtr, count: argumentsCount)
-          let thisValue = JavaScriptUnownedValue(runtime.pointee, thisPtr)
-          try context.call(thisValue, consume arguments).writeJSIValue(to: resultPtr)
-        }
-      }
-    }`;
-
-    const newFn2 = `    let thisPtrVar = NonisolatedUnsafeVar(thisPtr)
-    let argumentsPtrVar = NonisolatedUnsafeVar(argumentsPtr)
-    let resultPtrVar = NonisolatedUnsafeVar(resultPtr)
-
-    return withGuaranteedContext(context) { (context: UnownedThisHostFunctionContext, runtime) in
-      return JavaScriptActor.assumeIsolated {
-        return forwardingSwiftErrorsToJS(runtime: runtime) {
-          let arguments = JavaScriptValuesBuffer(runtime, start: argumentsPtrVar.value, count: argumentsCount)
-          let thisValue = JavaScriptUnownedValue(runtime.pointee, thisPtrVar.value)
-          try context.call(thisValue, consume arguments).writeJSIValue(to: resultPtrVar.value)
-        }
-      }
-    }`;
-
-    if (content.includes(oldFn2)) {
-      content = content.replace(oldFn2, newFn2);
-      changed = true;
-      console.log('  ✓ Fixed pointer captures in createFunctionClosure unowned-this (JavaScriptRuntime.swift)');
-    }
 
     // Fix raw var result capture in synchronous execute (line 476)
     const oldSyncExecute = `    var result: Result<R, any Error>!
@@ -323,17 +206,6 @@ if (fs.existsSync(jsiDir)) {
       console.log('  ✓ Fixed raw var result capture in JavaScriptRuntime.swift');
     }
 
-    // Strip conflicting `sending` annotations from signatures
-    if (content.includes('sending')) {
-      content = content.replace(/\bfunction:\s*sending\s*@escaping/g, 'function: @escaping');
-      content = content.replace(/_\s*function:\s*sending\s*@escaping/g, '_ function: @escaping');
-      content = content.replace(/->\s*sending\s+Void/g, '-> Void');
-      content = content.replace(/->\s*sending\s+R\b/g, '-> R');
-      content = content.replace(/throws\s*->\s*sending\s+R\b/g, 'throws -> R');
-      changed = true;
-      console.log('  ✓ Cleaned up sending annotations in JavaScriptRuntime.swift');
-    }
-
     if (changed) {
       fs.writeFileSync(runtimeSwiftPath, content, 'utf8');
       patchCount++;
@@ -341,177 +213,21 @@ if (fs.existsSync(jsiDir)) {
   }
 
   // ───────────────────────────────────────────────────────────────────────────
-  // 7. Task+immediate.swift: Remove @isolated(any) which requires iOS 18+
-  //    and wrap operation in NonisolatedUnsafeVar
+  // 6. Task+immediate.swift:
+  //    Fix iOS availability check from typo iOS 26.0 to iOS 18.0
   // ───────────────────────────────────────────────────────────────────────────
   const taskSwiftPath = path.join(jsiDir, 'apple', 'Sources', 'ExpoModulesJSI', 'Extensions', 'Task+immediate.swift');
   if (fs.existsSync(taskSwiftPath)) {
-    const replacement = `// swift-format-ignore-file: AlwaysUseLowerCamelCase
-
-extension Task where Failure == any Error {
-  @discardableResult
-  public static func immediate_polyfill(
-    name: String? = nil,
-    priority: TaskPriority? = nil,
-    @_inheritActorContext @_implicitSelfCapture operation: @escaping () async throws -> Success
-  ) -> Task<Success, any Error> {
-    let opVar = NonisolatedUnsafeVar(operation)
-    return Task(name: name, priority: priority ?? .high) {
-      try await opVar.value()
-    }
-  }
-}
-`;
-    fs.writeFileSync(taskSwiftPath, replacement, 'utf8');
-    console.log('  ✓ Rewrote Task+immediate.swift without @isolated(any)');
-    patchCount++;
-  }
-
-  // ───────────────────────────────────────────────────────────────────────────
-  // 8. JavaScriptPromise.swift: Wrap resolve/reject arguments in NonisolatedUnsafeVar
-  // ───────────────────────────────────────────────────────────────────────────
-  const promiseSwiftPath = path.join(jsiDir, 'apple', 'Sources', 'ExpoModulesJSI', 'Runtime', 'Values', 'JavaScriptPromise.swift');
-  if (fs.existsSync(promiseSwiftPath)) {
-    let content = fs.readFileSync(promiseSwiftPath, 'utf8');
-    let changed = false;
-
-    // Encodable resolve: wrap value
-    const oldEncodable = `  public func resolve<V: JavaScriptEncodable>(_ value: V) {
-    guard let runtime else {
-      return
-    }
-    // \`resolve\` is not isolated, so make sure to jump to JS thread; the encode happens there too.
-    runtime.schedule(priority: .immediate) { [longLivedState] in
-      // If the promise is already settled, do nothing.
-      guard let resolver = longLivedState.resolveFunction.take() else {
-        return
-      }
-      do {
-        let encoded = try V.encode(value, in: runtime)`;
-
-    const newEncodable = `  public func resolve<V: JavaScriptEncodable>(_ value: V) {
-    guard let runtime else {
-      return
-    }
-    let valueVar = NonisolatedUnsafeVar(value)
-    runtime.schedule(priority: .immediate) { [longLivedState] in
-      guard let resolver = longLivedState.resolveFunction.take() else {
-        return
-      }
-      do {
-        let encoded = try V.encode(valueVar.value, in: runtime)`;
-
-    if (content.includes(oldEncodable)) {
-      content = content.replace(oldEncodable, newEncodable);
-      changed = true;
-      console.log('  ✓ Fixed value capture in encodable resolve (JavaScriptPromise.swift)');
-    }
-
-    // Representable resolve: wrap value
-    const oldRepresentable = `  public func resolve<V: JavaScriptRepresentable>(_ value: V) {
-    guard let runtime else {
-      return
-    }
-
-    // \`resolve\` is not isolated, so make sure to jump to JS thread.
-    runtime.schedule(priority: .immediate) { [longLivedState] in
-      // If the promise is already settled, do nothing.
-      guard let resolver = longLivedState.resolveFunction.take() else {
-        return
-      }
-      do {
-        // Call the actual resolver given in the Promise setup.
-        // This will also call \`deferredPromise.resolve\` in the \`then\` handler.
-        _ = try resolver.getFunction().call(arguments: value)`;
-
-    const newRepresentable = `  public func resolve<V: JavaScriptRepresentable>(_ value: V) {
-    guard let runtime else {
-      return
-    }
-    let valueVar = NonisolatedUnsafeVar(value)
-    runtime.schedule(priority: .immediate) { [longLivedState] in
-      guard let resolver = longLivedState.resolveFunction.take() else {
-        return
-      }
-      do {
-        _ = try resolver.getFunction().call(arguments: valueVar.value)`;
-
-    if (content.includes(oldRepresentable)) {
-      content = content.replace(oldRepresentable, newRepresentable);
-      changed = true;
-      console.log('  ✓ Fixed value capture in representable resolve (JavaScriptPromise.swift)');
-    }
-
-    // Reject: wrap error
-    const oldReject = `  public func reject(_ error: any Error) {
-    guard let runtime else {
-      return
-    }
-
-    // \`reject\` is not isolated, so make sure to jump to JS thread.
-    runtime.schedule(priority: .immediate) { [longLivedState] in
-      // If the promise is already settled, do nothing.
-      guard let rejecter = longLivedState.rejectFunction.take() else {
-        return
-      }
-      // Convert the error to its JavaScript representation. This preserves an existing
-      // \`JavaScriptError\`'s wrapped value and a \`JavaScriptThrowable\`'s structured \`code\`
-      // (mirroring the synchronous throw path in \`forwardingSwiftErrorsToJS\`), so the \`code\`
-      // is not lost on async rejection. See \`JavaScriptError.from(_:in:)\`.
-      let errorValue = JavaScriptError.from(error, in: runtime).toValue()`;
-
-    const newReject = `  public func reject(_ error: any Error) {
-    guard let runtime else {
-      return
-    }
-    let errorVar = NonisolatedUnsafeVar(error)
-    runtime.schedule(priority: .immediate) { [longLivedState] in
-      guard let rejecter = longLivedState.rejectFunction.take() else {
-        return
-      }
-      let errorValue = JavaScriptError.from(errorVar.value, in: runtime).toValue()`;
-
-    if (content.includes(oldReject)) {
-      content = content.replace(oldReject, newReject);
-      changed = true;
-      console.log('  ✓ Fixed error capture in reject (JavaScriptPromise.swift)');
-    }
-
-    if (changed) {
-      fs.writeFileSync(promiseSwiftPath, content, 'utf8');
+    let content = fs.readFileSync(taskSwiftPath, 'utf8');
+    if (content.includes('macOS 26.0, iOS 26.0')) {
+      content = content.replace('macOS 26.0, iOS 26.0, watchOS 26.0, tvOS 26.0', 'macOS 15.0, iOS 18.0, watchOS 11.0, tvOS 18.0');
+      fs.writeFileSync(taskSwiftPath, content, 'utf8');
+      console.log('  ✓ Fixed Task+immediate.swift availability check');
       patchCount++;
     }
   }
 
-  // ───────────────────────────────────────────────────────────────────────────
-  // 9. Strip `sending` from all remaining Swift files in ExpoModulesJSI
-  // ───────────────────────────────────────────────────────────────────────────
-  const sendingFiles = [
-    path.join(jsiDir, 'apple', 'Sources', 'ExpoModulesJSI', 'Runtime', 'Values', 'JavaScriptObject.swift'),
-    path.join(jsiDir, 'apple', 'Sources', 'ExpoModulesJSI', 'Runtime', 'Values', 'JavaScriptPromise.swift'),
-    path.join(jsiDir, 'apple', 'Sources', 'ExpoModulesJSI', 'Utilities', 'DeferredPromise.swift'),
-    path.join(jsiDir, 'apple', 'Sources', 'ExpoModulesJSI', 'Runtime', 'JavaScriptActor.swift'),
-    path.join(jsiDir, 'apple', 'Sources', 'ExpoModulesJSI', 'Runtime', 'JavaScriptRef.swift'),
-  ];
-
-  for (const file of sendingFiles) {
-    if (fs.existsSync(file)) {
-      let content = fs.readFileSync(file, 'utf8');
-      if (content.includes('sending')) {
-        content = content.replace(/\bconsuming\s+sending\b/g, 'consuming');
-        content = content.replace(/\bsending\s+@escaping\b/g, '@escaping');
-        content = content.replace(/->\s*sending\s+/g, '-> ');
-        content = content.replace(/\(_\s*value:\s*sending\s+/g, '(_ value: ');
-        content = content.replace(/\(_\s*error:\s*sending\s+/g, '(_ error: ');
-        content = content.replace(/rethrows\s*->\s*sending\s+/g, 'rethrows -> ');
-        fs.writeFileSync(file, content, 'utf8');
-        console.log(`  ✓ Stripped sending in: ${path.basename(file)}`);
-        patchCount++;
-      }
-    }
-  }
-
-  console.log(`✅ expo-modules-jsi patch complete (${patchCount} patches applied).`);
+  console.log(`✅ expo-modules-jsi patch complete (${patchCount} patches applied, ABI preserved).`);
 } else {
   console.log('⚠️ expo-modules-jsi directory not found, skipping patch.');
 }
