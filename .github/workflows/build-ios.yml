@@ -69,16 +69,15 @@ jobs:
           settings = """
             installer.pods_project.targets.each do |target|
               target.build_configurations.each do |config|
-                config.build_settings['SWIFT_STRICT_CONCURRENCY'] = 'targeted'
                 config.build_settings['SWIFT_TREAT_WARNINGS_AS_ERRORS'] = 'NO'
                 config.build_settings['GCC_TREAT_WARNINGS_AS_ERRORS'] = 'NO'
               end
             end
           """
-          if marker in text and "SWIFT_STRICT_CONCURRENCY" not in text:
+          if marker in text and "SWIFT_TREAT_WARNINGS_AS_ERRORS" not in text:
               text = text.replace(marker, marker + settings)
               podfile.write_text(text)
-              print("✅ Patched Podfile with relaxed concurrency settings")
+              print("✅ Patched Podfile with relaxed warning settings")
           else:
               print("⏭ Podfile already patched or marker not found")
           PY
@@ -95,7 +94,24 @@ jobs:
         run: |
           export PODS_ROOT="$PWD/ios/Pods"
           export PLATFORM_NAME=iphoneos
-          bash ./node_modules/expo-modules-jsi/apple/scripts/build-xcframework.sh
+          set -o pipefail
+          bash ./node_modules/expo-modules-jsi/apple/scripts/build-xcframework.sh 2>&1 | tee precompile_jsi.log
+
+      - name: 🔍 Debug Pre-compile Failure
+        if: failure()
+        run: |
+          if [ -f precompile_jsi.log ]; then
+            echo "=================== PRECOMPILE LOG (LAST 200 LINES) ==================="
+            tail -n 200 precompile_jsi.log || true
+            echo "=================== PRECOMPILE ERRORS ==================="
+            grep -E "(error:|fatal error:|BUILD FAILED)" precompile_jsi.log || true
+            ERRORS=$(grep -E "(error:|fatal error:)" precompile_jsi.log | head -10 || true)
+            if [ -n "$ERRORS" ]; then
+              while IFS= read -r line; do
+                echo "::error title=ExpoModulesJSI::$line"
+              done <<< "$ERRORS"
+            fi
+          fi
 
       - name: 🛠️ Build iOS Archive
         run: |
@@ -106,7 +122,6 @@ jobs:
             -configuration Release \
             -destination 'generic/platform=iOS' \
             -archivePath "$PWD/build/Jellyboxd.xcarchive" \
-            SWIFT_STRICT_CONCURRENCY=targeted \
             SWIFT_TREAT_WARNINGS_AS_ERRORS=NO \
             CODE_SIGNING_ALLOWED=NO \
             CODE_SIGNING_REQUIRED=NO \
@@ -118,24 +133,28 @@ jobs:
       - name: 🔍 Debug Errors if Build Failed
         if: failure()
         run: |
-          echo "=================== SWIFT COMPILATION ERRORS ==================="
-          grep -E "(error:.*swift|\.swift:[0-9]+:[0-9]+: error)" xcodebuild.log | head -50 || true
-          echo ""
-          echo "=================== GENERAL BUILD ERRORS ==================="
-          grep -E "^.*error:" xcodebuild.log | head -50 || true
-          echo ""
-          echo "=================== ARCHIVE FAILED CONTEXT ==================="
-          grep -B20 "ARCHIVE FAILED" xcodebuild.log | tail -40 || true
-          echo ""
-          echo "=================== LAST 150 LINES ==================="
-          tail -n 150 xcodebuild.log
+          if [ -f xcodebuild.log ]; then
+            echo "=================== SWIFT COMPILATION ERRORS ==================="
+            grep -E "(error:.*swift|\.swift:[0-9]+:[0-9]+: error)" xcodebuild.log | head -50 || true
+            echo ""
+            echo "=================== GENERAL BUILD ERRORS ==================="
+            grep -E "^.*error:" xcodebuild.log | head -50 || true
+            echo ""
+            echo "=================== ARCHIVE FAILED CONTEXT ==================="
+            grep -B20 "ARCHIVE FAILED" xcodebuild.log | tail -40 || true
+            echo ""
+            echo "=================== LAST 150 LINES ==================="
+            tail -n 150 xcodebuild.log
+          fi
 
       - name: 📤 Upload Build Logs
         if: always()
         uses: actions/upload-artifact@v4
         with:
           name: xcodebuild-logs
-          path: xcodebuild.log
+          path: |
+            precompile_jsi.log
+            xcodebuild.log
           if-no-files-found: ignore
 
       - name: 📦 Package Unsigned IPA
