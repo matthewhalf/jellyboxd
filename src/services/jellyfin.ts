@@ -72,7 +72,56 @@ const STORAGE_KEYS = {
 };
 
 export class JellyfinService {
-  private static deviceId = "jellyboxd-ios-" + Math.random().toString(36).substring(2, 10);
+  private static deviceId = "jellyboxd-" + (Platform.OS === "ios" ? "ios" : "android");
+  private static deviceIdInitialized = false;
+
+  static async initDeviceId(): Promise<string> {
+    if (this.deviceIdInitialized) return this.deviceId;
+    try {
+      const stored = await SecureStore.getItemAsync(STORAGE_KEYS.DEVICE_ID);
+      if (stored) {
+        this.deviceId = stored;
+        this.deviceIdInitialized = true;
+        return stored;
+      }
+      const newId = `jellyboxd-${Platform.OS === "ios" ? "ios" : "android"}-${Math.random().toString(36).substring(2, 10)}`;
+      await SecureStore.setItemAsync(STORAGE_KEYS.DEVICE_ID, newId);
+      this.deviceId = newId;
+      this.deviceIdInitialized = true;
+      return newId;
+    } catch {
+      return this.deviceId;
+    }
+  }
+
+  static async fetchWithTimeoutAndRetry(
+    url: string,
+    options: RequestInit = {},
+    retries: number = 2,
+    timeoutMs: number = 9000
+  ): Promise<Response> {
+    let lastError: any = null;
+    for (let attempt = 0; attempt <= retries; attempt++) {
+      const controller = new AbortController();
+      const timer = setTimeout(() => controller.abort(), timeoutMs);
+      try {
+        const res = await fetch(url, {
+          ...options,
+          signal: controller.signal,
+        });
+        clearTimeout(timer);
+        return res;
+      } catch (err: any) {
+        clearTimeout(timer);
+        lastError = err;
+        if (attempt < retries) {
+          // exponential backoff
+          await new Promise((r) => setTimeout(r, 300 * Math.pow(2, attempt)));
+        }
+      }
+    }
+    throw lastError || new Error(`Fetch failed for ${url}`);
+  }
 
   private static getAuthHeader(token?: string): string {
     const parts = [
@@ -102,6 +151,7 @@ export class JellyfinService {
 
   static async getStoredSession(): Promise<JellyfinSession | null> {
     try {
+      await this.initDeviceId();
       const [serverUrl, token, userId, userName] = await Promise.all([
         SecureStore.getItemAsync(STORAGE_KEYS.SERVER_URL),
         SecureStore.getItemAsync(STORAGE_KEYS.TOKEN),
@@ -155,6 +205,7 @@ export class JellyfinService {
     }
 
     console.log(`[JellyfinService] Connessione a: ${cleanUrl}`);
+    await this.initDeviceId();
 
     // Verifica preliminare raggiungibilità server (System/Info/Public)
     try {
@@ -240,92 +291,127 @@ export class JellyfinService {
   }
 
   static async fetchResumeItems(session: JellyfinSession): Promise<JellyfinItem[]> {
-    const url = `${session.serverUrl}/Users/${session.userId}/Items/Resume?Limit=15&Fields=Overview,RunTimeTicks,UserData,ParentBackdropItemId,SeriesId,SeriesName`;
-    const res = await fetch(url, {
-      headers: this.getAuthHeaders(session.token),
-    });
-    if (!res.ok) return [];
-    const data = await res.json();
-    const rawItems: JellyfinItem[] = data.Items || [];
+    try {
+      const url = `${session.serverUrl}/Users/${session.userId}/Items/Resume?Limit=15&Fields=Overview,RunTimeTicks,UserData,ParentBackdropItemId,SeriesId,SeriesName`;
+      const res = await this.fetchWithTimeoutAndRetry(url, {
+        headers: this.getAuthHeaders(session.token),
+      });
+      if (!res.ok) return [];
+      const data = await res.json();
+      const rawItems: JellyfinItem[] = data.Items || [];
 
-    // Only show episodes and movies that the user has ACTUALLY started playing (ticks > 0)
-    return rawItems.filter(
-      (item) =>
-        (item.Type === "Episode" || item.Type === "Movie") &&
-        item.UserData &&
-        (item.UserData.PlaybackPositionTicks || 0) > 0 &&
-        !item.UserData.Played
-    );
+      // Only show episodes and movies that the user has ACTUALLY started playing (ticks > 0)
+      return rawItems.filter(
+        (item) =>
+          (item.Type === "Episode" || item.Type === "Movie") &&
+          item.UserData &&
+          (item.UserData.PlaybackPositionTicks || 0) > 0 &&
+          !item.UserData.Played
+      );
+    } catch (e) {
+      console.warn("[JellyfinService] fetchResumeItems error:", e);
+      return [];
+    }
   }
 
   static async fetchLibraries(session: JellyfinSession): Promise<JellyfinItem[]> {
-    const url = `${session.serverUrl}/Users/${session.userId}/Views`;
-    const res = await fetch(url, {
-      headers: this.getAuthHeaders(session.token),
-    });
-    if (!res.ok) return [];
-    const data = await res.json();
-    return data.Items || [];
+    try {
+      const url = `${session.serverUrl}/Users/${session.userId}/Views`;
+      const res = await this.fetchWithTimeoutAndRetry(url, {
+        headers: this.getAuthHeaders(session.token),
+      });
+      if (!res.ok) return [];
+      const data = await res.json();
+      return data.Items || [];
+    } catch (e) {
+      console.warn("[JellyfinService] fetchLibraries error:", e);
+      return [];
+    }
   }
 
   static async fetchLibraryItems(
     session: JellyfinSession,
     parentId: string
   ): Promise<JellyfinItem[]> {
-    // Only return top-level series or movies in the library, never loose episodes or seasons
-    const url = `${session.serverUrl}/Users/${session.userId}/Items?ParentId=${parentId}&Recursive=true&IncludeItemTypes=Movie,Series&SortBy=SortName&Limit=200`;
-    const res = await fetch(url, {
-      headers: this.getAuthHeaders(session.token),
-    });
-    if (!res.ok) return [];
-    const data = await res.json();
-    return data.Items || [];
+    try {
+      // Only return top-level series or movies in the library, never loose episodes or seasons
+      const url = `${session.serverUrl}/Users/${session.userId}/Items?ParentId=${parentId}&Recursive=true&IncludeItemTypes=Movie,Series&SortBy=SortName&Limit=200`;
+      const res = await this.fetchWithTimeoutAndRetry(url, {
+        headers: this.getAuthHeaders(session.token),
+      });
+      if (!res.ok) return [];
+      const data = await res.json();
+      return data.Items || [];
+    } catch (e) {
+      console.warn("[JellyfinService] fetchLibraryItems error:", e);
+      return [];
+    }
   }
 
   static async fetchSeries(session: JellyfinSession, limit: number = 25): Promise<JellyfinItem[]> {
-    const url = `${session.serverUrl}/Users/${session.userId}/Items?IncludeItemTypes=Series&Recursive=true&SortBy=SortName&Limit=${limit}`;
-    const res = await fetch(url, {
-      headers: this.getAuthHeaders(session.token),
-    });
-    if (!res.ok) return [];
-    const data = await res.json();
-    return data.Items || [];
+    try {
+      const url = `${session.serverUrl}/Users/${session.userId}/Items?IncludeItemTypes=Series&Recursive=true&SortBy=SortName&Limit=${limit}`;
+      const res = await this.fetchWithTimeoutAndRetry(url, {
+        headers: this.getAuthHeaders(session.token),
+      });
+      if (!res.ok) return [];
+      const data = await res.json();
+      return data.Items || [];
+    } catch (e) {
+      console.warn("[JellyfinService] fetchSeries error:", e);
+      return [];
+    }
   }
 
   static async fetchLatestSeries(session: JellyfinSession, limit: number = 20): Promise<JellyfinItem[]> {
-    const url = `${session.serverUrl}/Users/${session.userId}/Items?IncludeItemTypes=Series&Recursive=true&SortBy=DateCreated&SortOrder=Descending&Limit=${limit}`;
-    const res = await fetch(url, {
-      headers: this.getAuthHeaders(session.token),
-    });
-    if (!res.ok) return [];
-    const data = await res.json();
-    return data.Items || [];
+    try {
+      const url = `${session.serverUrl}/Users/${session.userId}/Items?IncludeItemTypes=Series&Recursive=true&SortBy=DateCreated&SortOrder=Descending&Limit=${limit}`;
+      const res = await this.fetchWithTimeoutAndRetry(url, {
+        headers: this.getAuthHeaders(session.token),
+      });
+      if (!res.ok) return [];
+      const data = await res.json();
+      return data.Items || [];
+    } catch (e) {
+      console.warn("[JellyfinService] fetchLatestSeries error:", e);
+      return [];
+    }
   }
 
   static async fetchNextUp(session: JellyfinSession, limit: number = 20): Promise<JellyfinItem[]> {
-    const url = `${session.serverUrl}/Shows/NextUp?userId=${session.userId}&Limit=${limit}&Fields=Overview,RunTimeTicks,UserData,ParentBackdropItemId,SeriesId,SeriesName`;
-    const res = await fetch(url, {
-      headers: this.getAuthHeaders(session.token),
-    });
-    if (!res.ok) return [];
-    const data = await res.json();
-    return data.Items || [];
+    try {
+      const url = `${session.serverUrl}/Shows/NextUp?userId=${session.userId}&Limit=${limit}&Fields=Overview,RunTimeTicks,UserData,ParentBackdropItemId,SeriesId,SeriesName`;
+      const res = await this.fetchWithTimeoutAndRetry(url, {
+        headers: this.getAuthHeaders(session.token),
+      });
+      if (!res.ok) return [];
+      const data = await res.json();
+      return data.Items || [];
+    } catch (e) {
+      console.warn("[JellyfinService] fetchNextUp error:", e);
+      return [];
+    }
   }
 
   static async fetchNextUpForSeries(
     session: JellyfinSession,
     seriesId: string
   ): Promise<JellyfinItem | null> {
-    const url = `${session.serverUrl}/Shows/NextUp?seriesId=${seriesId}&userId=${session.userId}&Limit=1&Fields=Overview,RunTimeTicks,UserData,ParentBackdropItemId,SeriesId,SeriesName`;
-    const res = await fetch(url, {
-      headers: this.getAuthHeaders(session.token),
-    });
-    if (!res.ok) return null;
-    const data = await res.json();
-    if (data.Items && data.Items.length > 0) {
-      return data.Items[0];
+    try {
+      const url = `${session.serverUrl}/Shows/NextUp?seriesId=${seriesId}&userId=${session.userId}&Limit=1&Fields=Overview,RunTimeTicks,UserData,ParentBackdropItemId,SeriesId,SeriesName`;
+      const res = await this.fetchWithTimeoutAndRetry(url, {
+        headers: this.getAuthHeaders(session.token),
+      });
+      if (!res.ok) return null;
+      const data = await res.json();
+      if (data.Items && data.Items.length > 0) {
+        return data.Items[0];
+      }
+      return null;
+    } catch (e) {
+      console.warn("[JellyfinService] fetchNextUpForSeries error:", e);
+      return null;
     }
-    return null;
   }
 
   static async searchItems(
@@ -333,35 +419,50 @@ export class JellyfinService {
     query: string,
     types: string = "Movie,Series"
   ): Promise<JellyfinItem[]> {
-    const url = `${session.serverUrl}/Users/${session.userId}/Items?SearchTerm=${encodeURIComponent(
-      query
-    )}&IncludeItemTypes=${types}&Recursive=true&Fields=Overview,RunTimeTicks,CommunityRating,ProductionYear,UserData&Limit=60`;
-    const res = await fetch(url, {
-      headers: this.getAuthHeaders(session.token),
-    });
-    if (!res.ok) return [];
-    const data = await res.json();
-    return data.Items || [];
+    try {
+      const url = `${session.serverUrl}/Users/${session.userId}/Items?SearchTerm=${encodeURIComponent(
+        query
+      )}&IncludeItemTypes=${types}&Recursive=true&Fields=Overview,RunTimeTicks,CommunityRating,ProductionYear,UserData&Limit=60`;
+      const res = await this.fetchWithTimeoutAndRetry(url, {
+        headers: this.getAuthHeaders(session.token),
+      }, 1, 6000);
+      if (!res.ok) return [];
+      const data = await res.json();
+      return data.Items || [];
+    } catch (e) {
+      console.warn("[JellyfinService] searchItems error:", e);
+      return [];
+    }
   }
 
   static async fetchMovies(session: JellyfinSession, limit: number = 25): Promise<JellyfinItem[]> {
-    const url = `${session.serverUrl}/Users/${session.userId}/Items?IncludeItemTypes=Movie&Recursive=true&SortBy=SortName&Limit=${limit}`;
-    const res = await fetch(url, {
-      headers: this.getAuthHeaders(session.token),
-    });
-    if (!res.ok) return [];
-    const data = await res.json();
-    return data.Items || [];
+    try {
+      const url = `${session.serverUrl}/Users/${session.userId}/Items?IncludeItemTypes=Movie&Recursive=true&SortBy=SortName&Limit=${limit}`;
+      const res = await this.fetchWithTimeoutAndRetry(url, {
+        headers: this.getAuthHeaders(session.token),
+      });
+      if (!res.ok) return [];
+      const data = await res.json();
+      return data.Items || [];
+    } catch (e) {
+      console.warn("[JellyfinService] fetchMovies error:", e);
+      return [];
+    }
   }
 
   static async fetchSeasons(session: JellyfinSession, seriesId: string): Promise<JellyfinItem[]> {
-    const url = `${session.serverUrl}/Shows/${seriesId}/Seasons?userId=${session.userId}`;
-    const res = await fetch(url, {
-      headers: this.getAuthHeaders(session.token),
-    });
-    if (!res.ok) return [];
-    const data = await res.json();
-    return data.Items || [];
+    try {
+      const url = `${session.serverUrl}/Shows/${seriesId}/Seasons?userId=${session.userId}`;
+      const res = await this.fetchWithTimeoutAndRetry(url, {
+        headers: this.getAuthHeaders(session.token),
+      });
+      if (!res.ok) return [];
+      const data = await res.json();
+      return data.Items || [];
+    } catch (e) {
+      console.warn("[JellyfinService] fetchSeasons error:", e);
+      return [];
+    }
   }
 
   static async fetchEpisodes(
@@ -369,25 +470,35 @@ export class JellyfinService {
     seriesId: string,
     seasonId: string
   ): Promise<JellyfinItem[]> {
-    const url = `${session.serverUrl}/Shows/${seriesId}/Episodes?seasonId=${seasonId}&userId=${session.userId}&Fields=Overview,PrimaryImageAspectRatio,MediaSources`;
-    const res = await fetch(url, {
-      headers: this.getAuthHeaders(session.token),
-    });
-    if (!res.ok) return [];
-    const data = await res.json();
-    return data.Items || [];
+    try {
+      const url = `${session.serverUrl}/Shows/${seriesId}/Episodes?seasonId=${seasonId}&userId=${session.userId}&Fields=Overview,PrimaryImageAspectRatio,MediaSources`;
+      const res = await this.fetchWithTimeoutAndRetry(url, {
+        headers: this.getAuthHeaders(session.token),
+      });
+      if (!res.ok) return [];
+      const data = await res.json();
+      return data.Items || [];
+    } catch (e) {
+      console.warn("[JellyfinService] fetchEpisodes error:", e);
+      return [];
+    }
   }
 
   static async fetchItemDetails(
     session: JellyfinSession,
     itemId: string
   ): Promise<JellyfinItem | null> {
-    const url = `${session.serverUrl}/Users/${session.userId}/Items/${itemId}?Fields=MediaSources,MediaStreams,Overview,RunTimeTicks,CommunityRating,ProductionYear,OfficialRating,Genres,Taglines,People,UserData`;
-    const res = await fetch(url, {
-      headers: this.getAuthHeaders(session.token),
-    });
-    if (!res.ok) return null;
-    return await res.json();
+    try {
+      const url = `${session.serverUrl}/Users/${session.userId}/Items/${itemId}?Fields=MediaSources,MediaStreams,Overview,RunTimeTicks,CommunityRating,ProductionYear,OfficialRating,Genres,Taglines,People,UserData`;
+      const res = await this.fetchWithTimeoutAndRetry(url, {
+        headers: this.getAuthHeaders(session.token),
+      });
+      if (!res.ok) return null;
+      return await res.json();
+    } catch (e) {
+      console.warn("[JellyfinService] fetchItemDetails error:", e);
+      return null;
+    }
   }
 
   static getMediaBadges(item?: JellyfinItem | null): string[] {

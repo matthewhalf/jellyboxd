@@ -1,6 +1,6 @@
 import { Ionicons } from "@expo/vector-icons";
-import { useLocalSearchParams, useRouter } from "expo-router";
-import React, { useEffect, useState } from "react";
+import { useLocalSearchParams, useRouter, useFocusEffect } from "expo-router";
+import React, { useCallback, useEffect, useState } from "react";
 import {
   ActivityIndicator,
   Animated,
@@ -71,6 +71,33 @@ export default function ItemDetailScreen() {
       .catch((err) => console.error("Errore fetch episodi:", err))
       .finally(() => setLoadingEpisodes(false));
   }, [session, id, selectedSeasonId, item?.Type, nextEpisode]);
+
+  // Silently re-fetch details & nextUp when returning from player
+  useFocusEffect(
+    useCallback(() => {
+      if (!session || !id || isLoading) return;
+
+      // Small delay so Jellyfin server can finalize playback state
+      const timer = setTimeout(async () => {
+        try {
+          const freshItem = await JellyfinService.fetchItemDetails(session, id);
+          if (freshItem) setItem(freshItem);
+
+          if (freshItem?.Type === "Series") {
+            const freshNextUp = await JellyfinService.fetchNextUpForSeries(session, id);
+            setNextEpisode(freshNextUp);
+
+            // Also refresh episodes for the selected season
+            if (selectedSeasonId) {
+              const freshEps = await JellyfinService.fetchEpisodes(session, id, selectedSeasonId);
+              setEpisodes(freshEps);
+            }
+          }
+        } catch {}
+      }, 400);
+      return () => clearTimeout(timer);
+    }, [session, id, selectedSeasonId])
+  );
 
   if (isLoading || !item || !session) {
     return (

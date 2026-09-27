@@ -52,16 +52,16 @@ export default function PlayerScreen() {
   const lastReportedTicks = useRef(0);
   const lastSyncedTicks = useRef(0);
 
-  // Enable dynamic screen rotation during playback, lock back to portrait on exit
+  // Lock screen orientation to landscape during playback, restore portrait on exit
   useEffect(() => {
-    async function enableRotation() {
+    async function lockLandscape() {
       try {
-        await ScreenOrientation.unlockAsync();
+        await ScreenOrientation.lockAsync(ScreenOrientation.OrientationLock.LANDSCAPE);
       } catch (e) {
-        console.warn("ScreenOrientation unlock error:", e);
+        console.warn("ScreenOrientation lock error:", e);
       }
     }
-    enableRotation();
+    lockLandscape();
 
     return () => {
       try {
@@ -104,8 +104,20 @@ export default function PlayerScreen() {
   const player = useVideoPlayer(streamUrl || "", (p) => {
     p.loop = false;
     p.timeUpdateEventInterval = 1;
+    p.staysActiveInBackground = true;
+    p.showNowPlayingNotification = true;
+    p.allowsExternalPlayback = true;
     p.play();
   });
+
+  // Ensure background playback & notifications remain active when player instance changes
+  useEffect(() => {
+    if (player) {
+      player.staysActiveInBackground = true;
+      player.showNowPlayingNotification = true;
+      player.allowsExternalPlayback = true;
+    }
+  }, [player]);
 
   // Automatically enter native fullscreen as soon as player is loaded
   useEffect(() => {
@@ -116,11 +128,13 @@ export default function PlayerScreen() {
         } catch {}
       };
       enterNativeFs();
-      const t1 = setTimeout(enterNativeFs, 150);
-      const t2 = setTimeout(enterNativeFs, 400);
+      const t1 = setTimeout(enterNativeFs, 100);
+      const t2 = setTimeout(enterNativeFs, 300);
+      const t3 = setTimeout(enterNativeFs, 600);
       return () => {
         clearTimeout(t1);
         clearTimeout(t2);
+        clearTimeout(t3);
       };
     }
   }, [player, streamUrl]);
@@ -163,6 +177,18 @@ export default function PlayerScreen() {
     }
   });
 
+  // Listen for playback completion (playToEnd)
+  useEventListener(player, "playToEnd", async () => {
+    if (!session || !id) return;
+    try {
+      const ticks = item?.RunTimeTicks || Math.round((player.duration || 0) * 10000000);
+      lastReportedTicks.current = ticks;
+      await JellyfinService.markItemPlayed(session, id, true);
+      await JellyfinService.reportPlaybackStopped(session, id, ticks);
+    } catch {}
+    handleClose();
+  });
+
   // Start playback reporting
   useEffect(() => {
     if (!session || !id) return;
@@ -179,18 +205,27 @@ export default function PlayerScreen() {
     };
   }, [session, id]);
 
-  const handleClose = () => {
+  const handleClose = async () => {
     if (isExiting) return;
     setIsExiting(true);
     try {
       if (player) {
         player.pause();
         const currentSec = player.currentTime || 0;
+        const totalDurationSec =
+          (item?.RunTimeTicks ? item.RunTimeTicks / 10000000 : 0) || player.duration || 0;
         const ticks = Math.round(currentSec * 10000000);
-        if (session && id && ticks > 0) {
-          lastReportedTicks.current = ticks;
-          JellyfinService.reportPlaybackProgress(session, id, ticks, true);
-          JellyfinService.reportPlaybackStopped(session, id, ticks);
+        const isFinished = totalDurationSec > 0 && currentSec >= totalDurationSec * 0.92;
+
+        if (session && id) {
+          if (isFinished) {
+            await JellyfinService.markItemPlayed(session, id, true);
+            await JellyfinService.reportPlaybackStopped(session, id, ticks);
+          } else if (ticks > 0) {
+            lastReportedTicks.current = ticks;
+            await JellyfinService.reportPlaybackProgress(session, id, ticks, true);
+            await JellyfinService.reportPlaybackStopped(session, id, ticks);
+          }
         }
       }
     } catch {}
@@ -269,7 +304,7 @@ export default function PlayerScreen() {
         contentFit="contain"
         fullscreenOptions={{
           enable: true,
-          orientation: "default",
+          orientation: "landscape",
           autoExitOnRotate: false,
         }}
         onFirstFrameRender={() => {
@@ -278,6 +313,9 @@ export default function PlayerScreen() {
           } catch {}
         }}
         onFullscreenExit={() => {
+          if (player?.isExternalPlaybackActive) {
+            return;
+          }
           handleClose();
         }}
       />

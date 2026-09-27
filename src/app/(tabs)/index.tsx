@@ -1,6 +1,6 @@
 import { Ionicons } from "@expo/vector-icons";
-import { useRouter } from "expo-router";
-import React, { useEffect, useState } from "react";
+import { useFocusEffect, useRouter } from "expo-router";
+import React, { useCallback, useEffect, useState } from "react";
 import {
   ActivityIndicator,
   Image,
@@ -29,30 +29,59 @@ export default function HomeScreen() {
   const [latestSeries, setLatestSeries] = useState<JellyfinItem[]>([]);
   const [moviesList, setMoviesList] = useState<JellyfinItem[]>([]);
   const [refreshing, setRefreshing] = useState(false);
+  const [initialLoading, setInitialLoading] = useState(true);
+  const [hasError, setHasError] = useState(false);
 
-  const loadData = async () => {
+  const loadData = async (isSilent: boolean = false) => {
     if (!session) return;
     try {
-      const [resumes, nextUp, series, movies] = await Promise.all([
+      const [resumesRes, nextUpRes, seriesRes, moviesRes] = await Promise.allSettled([
         JellyfinService.fetchResumeItems(session),
         JellyfinService.fetchNextUp(session, 20),
         JellyfinService.fetchLatestSeries(session, 20),
         JellyfinService.fetchMovies(session, 20),
       ]);
-      setResumeItems(resumes);
-      setNextUpItems(nextUp);
-      setLatestSeries(series);
-      setMoviesList(movies);
+
+      let anySuccess = false;
+      if (resumesRes.status === "fulfilled") {
+        setResumeItems(resumesRes.value);
+        if (resumesRes.value.length > 0) anySuccess = true;
+      }
+      if (nextUpRes.status === "fulfilled") {
+        setNextUpItems(nextUpRes.value);
+        if (nextUpRes.value.length > 0) anySuccess = true;
+      }
+      if (seriesRes.status === "fulfilled") {
+        setLatestSeries(seriesRes.value);
+        if (seriesRes.value.length > 0) anySuccess = true;
+      }
+      if (moviesRes.status === "fulfilled") {
+        setMoviesList(moviesRes.value);
+        if (moviesRes.value.length > 0) anySuccess = true;
+      }
+
+      setHasError(!anySuccess && (resumesRes.status === "rejected" || seriesRes.status === "rejected" || moviesRes.status === "rejected"));
     } catch (e) {
       console.error("Errore caricamento dati:", e);
+      setHasError(true);
+    } finally {
+      setInitialLoading(false);
     }
   };
 
-  useEffect(() => {
-    if (session) {
-      loadData();
-    }
-  }, [session]);
+  // Re-fetch automatically every time the home screen gains focus (e.g. returning from player)
+  useFocusEffect(
+    useCallback(() => {
+      if (session) {
+        loadData(true);
+        // Secondary follow-up to catch delayed Jellyfin server-side NextUp recalculations
+        const timer = setTimeout(() => {
+          loadData(true);
+        }, 650);
+        return () => clearTimeout(timer);
+      }
+    }, [session])
+  );
 
   const onRefresh = async () => {
     haptics.selection();
@@ -198,6 +227,33 @@ export default function HomeScreen() {
                 />
               ))}
             </ScrollView>
+          </View>
+        )}
+
+        {initialLoading && resumeItems.length === 0 && nextUpItems.length === 0 && latestSeries.length === 0 && moviesList.length === 0 && (
+          <View style={styles.loadingContainer}>
+            <ActivityIndicator size="large" color="#ffffff" />
+            <Text style={styles.loadingText}>Caricamento libreria...</Text>
+          </View>
+        )}
+
+        {!initialLoading && hasError && resumeItems.length === 0 && nextUpItems.length === 0 && latestSeries.length === 0 && moviesList.length === 0 && (
+          <View style={styles.errorContainer}>
+            <Ionicons name="cloud-offline-outline" size={48} color="#e5a00d" />
+            <Text style={styles.errorTitle}>Connessione non riuscita</Text>
+            <Text style={styles.errorSubtitle}>
+              Impossibile caricare i contenuti dal server Jellyfin.
+            </Text>
+            <Pressable
+              style={styles.retryButton}
+              onPress={() => {
+                setInitialLoading(true);
+                loadData();
+              }}
+            >
+              <Ionicons name="refresh" size={16} color="#ffffff" style={{ marginRight: 6 }} />
+              <Text style={styles.retryButtonText}>Riprova</Text>
+            </Pressable>
           </View>
         )}
       </ScrollView>
@@ -368,5 +424,52 @@ const styles = StyleSheet.create({
     color: "#677b8c",
     fontSize: 11,
     marginTop: 2,
+  },
+  loadingContainer: {
+    alignItems: "center",
+    justifyContent: "center",
+    paddingVertical: 60,
+    gap: 12,
+  },
+  loadingText: {
+    color: "#8e8e93",
+    fontSize: 13,
+    fontWeight: "500",
+  },
+  errorContainer: {
+    alignItems: "center",
+    justifyContent: "center",
+    paddingHorizontal: 32,
+    paddingVertical: 50,
+    gap: 8,
+  },
+  errorTitle: {
+    color: "#ffffff",
+    fontSize: 16,
+    fontWeight: "700",
+    textAlign: "center",
+    marginTop: 6,
+  },
+  errorSubtitle: {
+    color: "#8e8e93",
+    fontSize: 13,
+    textAlign: "center",
+    lineHeight: 18,
+    marginBottom: 10,
+  },
+  retryButton: {
+    flexDirection: "row",
+    alignItems: "center",
+    backgroundColor: "#1f252c",
+    paddingHorizontal: 18,
+    paddingVertical: 10,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: "#303943",
+  },
+  retryButtonText: {
+    color: "#ffffff",
+    fontSize: 13,
+    fontWeight: "600",
   },
 });
