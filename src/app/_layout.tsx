@@ -2,9 +2,10 @@ import { Stack } from "expo-router";
 import { StatusBar } from "expo-status-bar";
 import * as SystemUI from "expo-system-ui";
 import React, { useEffect } from "react";
+import { Platform } from "react-native";
+import { GestureHandlerRootView } from "react-native-gesture-handler";
 import { Palette, Typography } from "../constants/theme";
 import { AuthProvider } from "../context/AuthContext";
-import { LiquidGlassMenuProvider } from "../context/LiquidGlassMenuContext";
 import { NativePlayerProvider } from "../context/NativePlayerContext";
 
 export default function RootLayout() {
@@ -15,9 +16,9 @@ export default function RootLayout() {
   }, []);
 
   return (
-    <AuthProvider>
-      <NativePlayerProvider>
-        <LiquidGlassMenuProvider>
+    <GestureHandlerRootView style={{ flex: 1, backgroundColor: Palette.background }}>
+      <AuthProvider>
+        <NativePlayerProvider>
           <StatusBar style="light" />
           <Stack
             screenOptions={{
@@ -37,7 +38,8 @@ export default function RootLayout() {
               name="item/[id]"
               options={{
                 headerShown: false,
-                animation: "slide_from_right",
+                // Native push on iOS so the zoom transition from the tapped card can run
+                animation: Platform.OS === "ios" ? "default" : "slide_from_right",
                 gestureEnabled: true,
                 fullScreenGestureEnabled: false,
               }}
@@ -58,8 +60,8 @@ export default function RootLayout() {
               }}
             />
           </Stack>
-        </LiquidGlassMenuProvider>
-      </NativePlayerProvider>
-    </AuthProvider>
+        </NativePlayerProvider>
+      </AuthProvider>
+    </GestureHandlerRootView>
   );
 }

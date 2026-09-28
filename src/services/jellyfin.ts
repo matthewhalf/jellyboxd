@@ -829,4 +829,21 @@ export class JellyfinService {
       return false;
     }
   }
+
+  static async setFavorite(
+    session: JellyfinSession,
+    itemId: string,
+    favorite: boolean = true
+  ): Promise<boolean> {
+    try {
+      const url = `${session.serverUrl}/Users/${session.userId}/FavoriteItems/${itemId}`;
+      const res = await fetch(url, {
+        method: favorite ? "POST" : "DELETE",
+        headers: this.getAuthHeaders(session.token),
+      });
+      return res.ok;
+    } catch {
+      return false;
+    }
+  }
 }

@@ -1,12 +1,9 @@
 import { Image } from "expo-image";
-import { useRouter } from "expo-router";
 import React from "react";
-import { Animated, Pressable, StyleSheet, Text, View } from "react-native";
+import { StyleSheet, Text, View } from "react-native";
 import { Palette, Radius, Typography } from "../constants/theme";
-import { useLiquidGlassMenu } from "../context/LiquidGlassMenuContext";
-import { usePressScale } from "../hooks/use-press-scale";
-import { haptics } from "../lib/haptics";
 import { JellyfinItem, JellyfinService, JellyfinSession } from "../services/jellyfin";
+import { MediaLink } from "./MediaLink";
 
 interface GridCardProps {
   item: JellyfinItem;
@@ -24,44 +21,37 @@ export const GridCard: React.FC<GridCardProps> = ({
   onRefresh,
   seriesOnly = false,
 }) => {
-  const router = useRouter();
-  const { openMenu } = useLiquidGlassMenu();
-  const { scale, onPressIn, onPressOut, bounce } = usePressScale(0.94);
-
   const imageUrl = session
     ? JellyfinService.getImageUrl(session.serverUrl, item.Id, "Primary", 360)
     : "";
 
   return (
-    <Animated.View style={{ width, transform: [{ scale }] }}>
-      <Pressable
-        onPressIn={onPressIn}
-        onPressOut={onPressOut}
-        onPress={() => {
-          haptics.light();
-          router.push(`/item/${item.Id}`);
-        }}
-        onLongPress={() => {
-          bounce();
-          openMenu({ item, session, onRefresh, seriesOnly });
-        }}
-        delayLongPress={300}
-      >
-        <View style={[styles.poster, { width, height: width * 1.5 }]}>
-          <Image
-            source={{ uri: imageUrl }}
-            style={StyleSheet.absoluteFill}
-            contentFit="cover"
-            transition={250}
-            recyclingKey={item.Id}
-          />
-        </View>
-        <Text style={styles.title} numberOfLines={1}>
-          {item.Name}
-        </Text>
-        {item.ProductionYear && <Text style={styles.sub}>{item.ProductionYear}</Text>}
-      </Pressable>
-    </Animated.View>
+    <MediaLink
+      item={item}
+      session={session}
+      onRefresh={onRefresh}
+      seriesOnly={seriesOnly}
+      pressedScale={0.94}
+      style={{ width }}
+      footer={
+        <>
+          <Text style={styles.title} numberOfLines={1}>
+            {item.Name}
+          </Text>
+          {item.ProductionYear && <Text style={styles.sub}>{item.ProductionYear}</Text>}
+        </>
+      }
+    >
+      <View style={[styles.poster, { width, height: width * 1.5 }]}>
+        <Image
+          source={{ uri: imageUrl }}
+          style={StyleSheet.absoluteFill}
+          contentFit="cover"
+          transition={250}
+          recyclingKey={item.Id}
+        />
+      </View>
+    </MediaLink>
   );
 };
 

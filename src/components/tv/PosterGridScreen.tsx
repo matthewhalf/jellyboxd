@@ -11,6 +11,7 @@ import {
   useWindowDimensions,
   View,
 } from "react-native";
+import Reanimated, { FadeInDown } from "react-native-reanimated";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Gutter, Palette, Typography } from "../../constants/theme";
 import { useAuth } from "../../context/AuthContext";
@@ -108,14 +109,17 @@ export function PosterGridScreen({
               <Text style={styles.emptyText}>{emptyText}</Text>
             </View>
           }
-          renderItem={({ item }) => (
-            <GridCard
-              item={item}
-              session={session}
-              width={cardWidth}
-              onRefresh={load}
-              seriesOnly={seriesOnly}
-            />
+          renderItem={({ item, index }) => (
+            // Staggered fade-in for the first screenful
+            <Reanimated.View entering={index < 18 ? FadeInDown.delay(index * 30).duration(320) : undefined}>
+              <GridCard
+                item={item}
+                session={session}
+                width={cardWidth}
+                onRefresh={load}
+                seriesOnly={seriesOnly}
+              />
+            </Reanimated.View>
           )}
         />
       )}

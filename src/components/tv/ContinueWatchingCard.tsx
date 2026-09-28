@@ -1,12 +1,10 @@
 import { Image } from "expo-image";
 import { LinearGradient } from "expo-linear-gradient";
 import React, { useEffect, useLayoutEffect, useRef, useState } from "react";
-import { Animated, Pressable, StyleSheet, Text, View } from "react-native";
+import { Animated, StyleSheet, Text, View } from "react-native";
 import { Palette, Radius, Typography } from "../../constants/theme";
-import { useLiquidGlassMenu } from "../../context/LiquidGlassMenuContext";
-import { useNativePlayer } from "../../context/NativePlayerContext";
-import { usePressScale } from "../../hooks/use-press-scale";
 import { JellyfinItem, JellyfinService, JellyfinSession } from "../../services/jellyfin";
+import { MediaLink } from "../MediaLink";
 import { ProgressBar } from "./ProgressBar";
 
 const TICKS_PER_MINUTE = 10000000 * 60;
@@ -39,9 +37,6 @@ export function ContinueWatchingCard({
   gap,
   onRefresh,
 }: ContinueWatchingCardProps) {
-  const { openMenu } = useLiquidGlassMenu();
-  const { play } = useNativePlayer();
-  const { scale: touchScale, onPressIn, onPressOut, bounce } = usePressScale();
 
   // FLIP reorder: slide from the old slot when the list order changes
   const prevIndexRef = useRef(index);
@@ -128,19 +123,10 @@ export function ContinueWatchingCard({
       style={{
         width,
         zIndex,
-        transform: [{ translateX }, { scale: Animated.multiply(touchScale, reorderScale) }],
+        transform: [{ translateX }, { scale: reorderScale }],
       }}
     >
-      <Pressable
-        onPressIn={onPressIn}
-        onPressOut={onPressOut}
-        onPress={() => play(item.Id)}
-        onLongPress={() => {
-          bounce();
-          openMenu({ item, session, onRefresh });
-        }}
-        delayLongPress={300}
-      >
+      <MediaLink item={item} session={session} onRefresh={onRefresh} playOnPress>
         <Animated.View style={{ opacity: contentFade }}>
           <View style={[styles.artwork, { width, height: (width * 9) / 16 }]}>
             <Image
@@ -174,7 +160,7 @@ export function ContinueWatchingCard({
             </Text>
           )}
         </Animated.View>
-      </Pressable>
+      </MediaLink>
     </Animated.View>
   );
 }

@@ -10,6 +10,7 @@ import {
   useWindowDimensions,
   View,
 } from "react-native";
+import Reanimated, { FadeInDown } from "react-native-reanimated";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { GridCard } from "../../components/GridCard";
 import { Gutter, Palette, Radius, Typography } from "../../constants/theme";
@@ -91,13 +92,15 @@ export default function SearchScreen() {
         contentContainerStyle={styles.listContent}
         showsVerticalScrollIndicator={false}
         keyboardDismissMode="on-drag"
-        renderItem={({ item }) => (
-          <GridCard
-            item={item}
-            session={session}
-            width={cardWidth}
-            seriesOnly={item.Type === "Series"}
-          />
+        renderItem={({ item, index }) => (
+          <Reanimated.View entering={index < 18 ? FadeInDown.delay(index * 30).duration(320) : undefined}>
+            <GridCard
+              item={item}
+              session={session}
+              width={cardWidth}
+              seriesOnly={item.Type === "Series"}
+            />
+          </Reanimated.View>
         )}
       />
     );

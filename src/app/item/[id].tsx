@@ -2,7 +2,7 @@ import { Ionicons } from "@expo/vector-icons";
 import { BlurView } from "expo-blur";
 import { Image } from "expo-image";
 import { LinearGradient } from "expo-linear-gradient";
-import { useFocusEffect, useLocalSearchParams, useRouter } from "expo-router";
+import { Link, useFocusEffect, useLocalSearchParams, useRouter } from "expo-router";
 import React, { useCallback, useEffect, useState } from "react";
 import {
   ActivityIndicator,
@@ -14,15 +14,16 @@ import {
   useWindowDimensions,
   View,
 } from "react-native";
+import { Gesture, GestureDetector } from "react-native-gesture-handler";
+import Reanimated, { ZoomIn } from "react-native-reanimated";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
+import { MediaLink } from "../../components/MediaLink";
 import { PillButton } from "../../components/tv/PillButton";
 import { ProgressBar } from "../../components/tv/ProgressBar";
 import { Shelf } from "../../components/tv/Shelf";
 import { Gutter, Palette, Radius, Typography } from "../../constants/theme";
 import { useAuth } from "../../context/AuthContext";
-import { useLiquidGlassMenu } from "../../context/LiquidGlassMenuContext";
 import { useNativePlayer, usePlaybackFinished } from "../../context/NativePlayerContext";
-import { usePressScale } from "../../hooks/use-press-scale";
 import { haptics } from "../../lib/haptics";
 import {
   JellyfinItem,
@@ -66,6 +67,7 @@ export default function ItemDetailScreen() {
   const [overviewExpanded, setOverviewExpanded] = useState(false);
   const [logoFailed, setLogoFailed] = useState(false);
   const [scrollY] = useState(() => new Animated.Value(0));
+  const [heart] = useState(() => new Animated.Value(0));
 
   // Load main item metadata
   useEffect(() => {
@@ -206,6 +208,25 @@ export default function ItemDetailScreen() {
     }
   };
 
+  // Double tap on the artwork adds the title to Jellyfin favorites (heart burst)
+  const isFavorite = !!item.UserData?.IsFavorite;
+  const handleDoubleTap = async () => {
+    heart.setValue(0);
+    Animated.sequence([
+      Animated.spring(heart, { toValue: 1, friction: 4, tension: 120, useNativeDriver: true }),
+      Animated.timing(heart, { toValue: 2, duration: 350, delay: 250, useNativeDriver: true }),
+    ]).start();
+    haptics.success();
+    if (isFavorite) return;
+    setItem({ ...item, UserData: { ...item.UserData, IsFavorite: true } });
+    const ok = await JellyfinService.setFavorite(session, item.Id, true);
+    if (!ok) setItem((prev) => (prev ? { ...prev, UserData: { ...prev.UserData, IsFavorite: false } } : prev));
+  };
+  const doubleTap = Gesture.Tap()
+    .numberOfTaps(2)
+    .runOnJS(true)
+    .onEnd(() => handleDoubleTap());
+
   const heroImageTransform = [
     {
       translateY: scrollY.interpolate({
@@ -238,57 +259,79 @@ export default function ItemDetailScreen() {
           useNativeDriver: true,
         })}
       >
-        {/* Hero artwork */}
-        <View style={{ height: heroHeight }}>
-          <Animated.View style={[StyleSheet.absoluteFill, { transform: heroImageTransform }]}>
-            <Image
-              source={{
-                uri: JellyfinService.getImageUrl(session.serverUrl, item.Id, "Backdrop", 1280),
-              }}
-              style={StyleSheet.absoluteFill}
-              contentFit="cover"
-              transition={400}
-            />
-            <LinearGradient colors={["rgba(0,0,0,0.5)", "transparent"]} style={styles.topShade} />
-            <LinearGradient
-              colors={["transparent", "rgba(0,0,0,0.5)", Palette.background]}
-              locations={[0.35, 0.7, 1]}
-              style={StyleSheet.absoluteFill}
-            />
-          </Animated.View>
+        {/* Hero artwork: zoom transition target + double tap to favorite */}
+        <GestureDetector gesture={doubleTap}>
+          <View style={{ height: heroHeight }}>
+            <Link.AppleZoomTarget>
+              <Animated.View style={[StyleSheet.absoluteFill, { transform: heroImageTransform }]}>
+                <Image
+                  source={{
+                    uri: JellyfinService.getImageUrl(session.serverUrl, item.Id, "Backdrop", 1280),
+                  }}
+                  style={StyleSheet.absoluteFill}
+                  contentFit="cover"
+                  transition={400}
+                />
+                <LinearGradient colors={["rgba(0,0,0,0.5)", "transparent"]} style={styles.topShade} />
+                <LinearGradient
+                  colors={["transparent", "rgba(0,0,0,0.5)", Palette.background]}
+                  locations={[0.35, 0.7, 1]}
+                  style={StyleSheet.absoluteFill}
+                />
+              </Animated.View>
+            </Link.AppleZoomTarget>
 
-          <View style={styles.heroContent}>
-            {showLogo ? (
-              <Image
-                source={{ uri: JellyfinService.getImageUrl(session.serverUrl, logoId, "Logo", 800) }}
-                style={{ width: width * 0.7, height: Math.min(100, width * 0.24) }}
-                contentFit="contain"
-                transition={300}
-                onError={() => setLogoFailed(true)}
-              />
-            ) : (
-              <Text style={styles.title} numberOfLines={3}>
-                {item.Name}
+            <Animated.View
+              pointerEvents="none"
+              style={[
+                styles.heart,
+                {
+                  opacity: heart.interpolate({ inputRange: [0, 0.2, 1, 2], outputRange: [0, 1, 1, 0] }),
+                  transform: [{ scale: heart.interpolate({ inputRange: [0, 1, 2], outputRange: [0.3, 1, 1.4] }) }],
+                },
+              ]}
+            >
+              <Ionicons name="heart" size={88} color="#ff375f" />
+            </Animated.View>
+
+            <View style={styles.heroContent}>
+              {showLogo ? (
+                <Image
+                  source={{ uri: JellyfinService.getImageUrl(session.serverUrl, logoId, "Logo", 800) }}
+                  style={{ width: width * 0.7, height: Math.min(100, width * 0.24) }}
+                  contentFit="contain"
+                  transition={300}
+                  onError={() => setLogoFailed(true)}
+                />
+              ) : (
+                <Text style={styles.title} numberOfLines={3}>
+                  {item.Name}
+                </Text>
+              )}
+              <Text style={styles.meta} numberOfLines={1}>
+                {meta}
               </Text>
-            )}
-            <Text style={styles.meta} numberOfLines={1}>
-              {meta}
-            </Text>
-            <View style={styles.badgeRow}>
-              {item.CommunityRating ? (
-                <View style={styles.ratingBadge}>
-                  <Ionicons name="star" size={10} color={Palette.label} />
-                  <Text style={styles.badgeText}>{item.CommunityRating.toFixed(1)}</Text>
-                </View>
-              ) : null}
-              {[item.OfficialRating, ...mediaBadges].filter(Boolean).map((badge) => (
-                <View key={badge} style={styles.badge}>
-                  <Text style={styles.badgeText}>{badge}</Text>
-                </View>
-              ))}
+              <View style={styles.badgeRow}>
+                {isFavorite && (
+                  <View style={styles.ratingBadge}>
+                    <Ionicons name="heart" size={10} color="#ff375f" />
+                  </View>
+                )}
+                {item.CommunityRating ? (
+                  <View style={styles.ratingBadge}>
+                    <Ionicons name="star" size={10} color={Palette.label} />
+                    <Text style={styles.badgeText}>{item.CommunityRating.toFixed(1)}</Text>
+                  </View>
+                ) : null}
+                {[item.OfficialRating, ...mediaBadges].filter(Boolean).map((badge) => (
+                  <View key={badge} style={styles.badge}>
+                    <Text style={styles.badgeText}>{badge}</Text>
+                  </View>
+                ))}
+              </View>
             </View>
           </View>
-        </View>
+        </GestureDetector>
 
         <View style={styles.body}>
           {playTarget && (
@@ -455,63 +498,56 @@ function EpisodeCard({
   width: number;
   onRefresh: () => void;
 }) {
-  const { openMenu } = useLiquidGlassMenu();
-  const { play } = useNativePlayer();
-  const { scale, onPressIn, onPressOut, bounce } = usePressScale(0.96);
-
   const epMins = ep.RunTimeTicks ? Math.round(ep.RunTimeTicks / TICKS_PER_MINUTE) : null;
   const left = minutesLeft(ep);
   const isPlayed = !!ep.UserData?.Played;
   const progress = ep.UserData?.PlayedPercentage || 0;
 
   return (
-    <Animated.View style={{ width, transform: [{ scale }] }}>
-      <Pressable
-        onPressIn={onPressIn}
-        onPressOut={onPressOut}
-        onPress={() => play(ep.Id)}
-        onLongPress={() => {
-          bounce();
-          openMenu({ item: { ...ep, SeriesId: seriesId }, session, onRefresh });
-        }}
-        delayLongPress={300}
-      >
-        <View style={[styles.episodeArtwork, { width, height: (width * 9) / 16 }]}>
-          <Image
-            source={{ uri: JellyfinService.getImageUrl(session.serverUrl, ep.Id, "Primary", 640) }}
-            style={StyleSheet.absoluteFill}
-            contentFit="cover"
-            transition={250}
-            recyclingKey={ep.Id}
-          />
-          {isPlayed && (
-            <View style={styles.playedBadge}>
-              <Ionicons name="checkmark" size={13} color={Palette.buttonPrimaryLabel} />
-            </View>
-          )}
-          {!isPlayed && progress > 0 && (
-            <>
-              <LinearGradient colors={["transparent", "rgba(0,0,0,0.7)"]} style={styles.episodeShade} />
-              <ProgressBar percent={progress} style={styles.episodeProgress} />
-            </>
-          )}
-        </View>
+    <MediaLink
+      item={{ ...ep, SeriesId: seriesId }}
+      session={session}
+      onRefresh={onRefresh}
+      playOnPress
+      pressedScale={0.96}
+      style={{ width }}
+    >
+      <View style={[styles.episodeArtwork, { width, height: (width * 9) / 16 }]}>
+        <Image
+          source={{ uri: JellyfinService.getImageUrl(session.serverUrl, ep.Id, "Primary", 640) }}
+          style={StyleSheet.absoluteFill}
+          contentFit="cover"
+          transition={250}
+          recyclingKey={ep.Id}
+        />
+        {isPlayed && (
+          // Pops in when an episode is marked as watched from the context menu
+          <Reanimated.View entering={ZoomIn.springify().damping(12)} style={styles.playedBadge}>
+            <Ionicons name="checkmark" size={13} color={Palette.buttonPrimaryLabel} />
+          </Reanimated.View>
+        )}
+        {!isPlayed && progress > 0 && (
+          <>
+            <LinearGradient colors={["transparent", "rgba(0,0,0,0.7)"]} style={styles.episodeShade} />
+            <ProgressBar percent={progress} style={styles.episodeProgress} />
+          </>
+        )}
+      </View>
 
-        <Text style={styles.episodeOverline}>
-          EPISODIO {ep.IndexNumber ?? "–"}
-          {left ? ` · ${formatMinutes(left).toUpperCase()} RIMASTI` : ""}
+      <Text style={styles.episodeOverline}>
+        EPISODIO {ep.IndexNumber ?? "–"}
+        {left ? ` · ${formatMinutes(left).toUpperCase()} RIMASTI` : ""}
+      </Text>
+      <Text style={styles.episodeTitle} numberOfLines={1}>
+        {ep.Name}
+      </Text>
+      {ep.Overview ? (
+        <Text style={styles.episodeOverview} numberOfLines={3}>
+          {ep.Overview}
         </Text>
-        <Text style={styles.episodeTitle} numberOfLines={1}>
-          {ep.Name}
-        </Text>
-        {ep.Overview ? (
-          <Text style={styles.episodeOverview} numberOfLines={3}>
-            {ep.Overview}
-          </Text>
-        ) : null}
-        {epMins && <Text style={styles.episodeDuration}>{formatMinutes(epMins)}</Text>}
-      </Pressable>
-    </Animated.View>
+      ) : null}
+      {epMins && <Text style={styles.episodeDuration}>{formatMinutes(epMins)}</Text>}
+    </MediaLink>
   );
 }
 
@@ -543,6 +579,15 @@ function CastMember({ person, session }: { person: JellyfinPerson; session: Jell
 }
 
 const styles = StyleSheet.create({
+  heart: {
+    position: "absolute",
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    alignItems: "center",
+    justifyContent: "center",
+  },
   container: {
     flex: 1,
     backgroundColor: Palette.background,
