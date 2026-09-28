@@ -1,25 +1,59 @@
 import { Ionicons } from "@expo/vector-icons";
-import { useLocalSearchParams, useRouter, useFocusEffect } from "expo-router";
+import { BlurView } from "expo-blur";
+import { Image } from "expo-image";
+import { LinearGradient } from "expo-linear-gradient";
+import { useFocusEffect, useLocalSearchParams, useRouter } from "expo-router";
 import React, { useCallback, useEffect, useState } from "react";
 import {
   ActivityIndicator,
   Animated,
-  Image,
   Pressable,
   ScrollView,
   StyleSheet,
   Text,
+  useWindowDimensions,
   View,
 } from "react-native";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
+import { PillButton } from "../../components/tv/PillButton";
+import { ProgressBar } from "../../components/tv/ProgressBar";
+import { Shelf } from "../../components/tv/Shelf";
+import { Gutter, Palette, Radius, Typography } from "../../constants/theme";
 import { useAuth } from "../../context/AuthContext";
 import { useLiquidGlassMenu } from "../../context/LiquidGlassMenuContext";
+import { useNativePlayer, usePlaybackFinished } from "../../context/NativePlayerContext";
+import { usePressScale } from "../../hooks/use-press-scale";
 import { haptics } from "../../lib/haptics";
-import { JellyfinItem, JellyfinService } from "../../services/jellyfin";
+import {
+  JellyfinItem,
+  JellyfinPerson,
+  JellyfinService,
+  JellyfinSession,
+} from "../../services/jellyfin";
+
+const TICKS_PER_MINUTE = 10000000 * 60;
+const EPISODE_GAP = 14;
+
+function formatMinutes(mins: number): string {
+  if (mins < 60) return `${mins} min`;
+  const h = Math.floor(mins / 60);
+  const m = mins % 60;
+  return m > 0 ? `${h} h ${m} min` : `${h} h`;
+}
+
+function minutesLeft(item: JellyfinItem): number | null {
+  const pos = item.UserData?.PlaybackPositionTicks || 0;
+  if (!pos || !item.RunTimeTicks) return null;
+  return Math.max(1, Math.round((item.RunTimeTicks - pos) / TICKS_PER_MINUTE));
+}
 
 export default function ItemDetailScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
   const { session } = useAuth();
   const router = useRouter();
+  const { play } = useNativePlayer();
+  const insets = useSafeAreaInsets();
+  const { width, height } = useWindowDimensions();
 
   const [item, setItem] = useState<JellyfinItem | null>(null);
   const [seasons, setSeasons] = useState<JellyfinItem[]>([]);
@@ -27,13 +61,15 @@ export default function ItemDetailScreen() {
   const [episodes, setEpisodes] = useState<JellyfinItem[]>([]);
   const [nextEpisode, setNextEpisode] = useState<JellyfinItem | null>(null);
   const [isLoading, setIsLoading] = useState(true);
-  const [loadingEpisodes, setLoadingEpisodes] = useState(false);
+  // Season whose episodes are currently in `episodes`; differs while a season loads
+  const [loadedSeasonId, setLoadedSeasonId] = useState<string | null>(null);
+  const [overviewExpanded, setOverviewExpanded] = useState(false);
+  const [logoFailed, setLogoFailed] = useState(false);
+  const [scrollY] = useState(() => new Animated.Value(0));
 
   // Load main item metadata
   useEffect(() => {
     if (!session || !id) return;
-    setIsLoading(true);
-
     JellyfinService.fetchItemDetails(session, id)
       .then(async (data) => {
         setItem(data);
@@ -43,12 +79,10 @@ export default function ItemDetailScreen() {
             JellyfinService.fetchNextUpForSeries(session, id),
           ]);
           setSeasons(seasonsList);
-          if (nextUp) {
-            setNextEpisode(nextUp);
-          }
-          if (seasonsList.length > 0) {
-            setSelectedSeasonId(seasonsList[0].Id);
-          }
+          setNextEpisode(nextUp);
+          // Open on the season containing the next episode to watch
+          const nextSeason = seasonsList.find((s) => s.Id === nextUp?.SeasonId);
+          setSelectedSeasonId((nextSeason ?? seasonsList[0])?.Id ?? null);
         }
       })
       .catch((err) => console.error("Errore fetch dettagli:", err))
@@ -58,617 +92,735 @@ export default function ItemDetailScreen() {
   // Load episodes when active season changes
   useEffect(() => {
     if (!session || !id || !selectedSeasonId || item?.Type !== "Series") return;
-    setLoadingEpisodes(true);
     JellyfinService.fetchEpisodes(session, id, selectedSeasonId)
       .then((eps) => {
         setEpisodes(eps);
-        // Fallback next episode if nextUp wasn't returned
-        if (!nextEpisode && eps.length > 0) {
-          const unplayed = eps.find((e) => !e.UserData?.Played);
-          setNextEpisode(unplayed || eps[0]);
+        setLoadedSeasonId(selectedSeasonId);
+        // Fallback next episode if NextUp returned nothing
+        if (eps.length > 0) {
+          setNextEpisode((prev) => prev ?? eps.find((e) => !e.UserData?.Played) ?? eps[0]);
         }
       })
-      .catch((err) => console.error("Errore fetch episodi:", err))
-      .finally(() => setLoadingEpisodes(false));
-  }, [session, id, selectedSeasonId, item?.Type, nextEpisode]);
+      .catch((err) => {
+        console.error("Errore fetch episodi:", err);
+        setEpisodes([]);
+        setLoadedSeasonId(selectedSeasonId);
+      });
+  }, [session, id, selectedSeasonId, item?.Type]);
 
-  // Silently re-fetch details & nextUp when returning from player
+  // Silently re-fetch details, next up and episodes (e.g. after playback)
+  const refreshSilently = async () => {
+    if (!session || !id) return;
+    try {
+      const freshItem = await JellyfinService.fetchItemDetails(session, id);
+      if (freshItem) setItem(freshItem);
+
+      if (freshItem?.Type === "Series") {
+        const freshNextUp = await JellyfinService.fetchNextUpForSeries(session, id);
+        setNextEpisode(freshNextUp);
+        if (selectedSeasonId) {
+          setEpisodes(await JellyfinService.fetchEpisodes(session, id, selectedSeasonId));
+        }
+      }
+    } catch {}
+  };
+
+  // Returning from another screen (e.g. a context menu action elsewhere)
   useFocusEffect(
     useCallback(() => {
       if (!session || !id || isLoading) return;
-
-      // Small delay so Jellyfin server can finalize playback state
-      const timer = setTimeout(async () => {
-        try {
-          const freshItem = await JellyfinService.fetchItemDetails(session, id);
-          if (freshItem) setItem(freshItem);
-
-          if (freshItem?.Type === "Series") {
-            const freshNextUp = await JellyfinService.fetchNextUpForSeries(session, id);
-            setNextEpisode(freshNextUp);
-
-            // Also refresh episodes for the selected season
-            if (selectedSeasonId) {
-              const freshEps = await JellyfinService.fetchEpisodes(session, id, selectedSeasonId);
-              setEpisodes(freshEps);
-            }
-          }
-        } catch {}
-      }, 400);
+      const timer = setTimeout(refreshSilently, 400);
       return () => clearTimeout(timer);
     }, [session, id, selectedSeasonId])
   );
 
+  // The native player closes without navigation, so focus doesn't change
+  usePlaybackFinished(() => {
+    setTimeout(refreshSilently, 400);
+  });
+
   if (isLoading || !item || !session) {
     return (
       <View style={styles.center}>
-        <ActivityIndicator size="large" color="#ffffff" />
+        <ActivityIndicator size="large" color={Palette.label} />
       </View>
     );
   }
 
   const isSeries = item.Type === "Series";
+  const heroHeight = Math.round(Math.min(height * 0.62, width * 1.25));
+  const headerHeight = insets.top + 52;
+  const episodeWidth = Math.min(width * 0.78, 340);
+
   const mediaBadges = isSeries
     ? JellyfinService.getMediaBadges(nextEpisode || episodes[0])
     : JellyfinService.getMediaBadges(item);
+  const logoId = JellyfinService.getLogoItemId(item);
+  const showLogo = !!logoId && !logoFailed;
 
-  const backdropUrl = JellyfinService.getImageUrl(session.serverUrl, item.Id, "Backdrop", 900);
-  const posterUrl = JellyfinService.getImageUrl(session.serverUrl, item.Id, "Primary", 500);
-  const runtimeMins = item.RunTimeTicks ? Math.round(item.RunTimeTicks / (10000000 * 60)) : null;
+  const meta = [
+    isSeries ? "Serie TV" : "Film",
+    ...(item.Genres ?? []).slice(0, 2),
+    item.ProductionYear,
+  ]
+    .filter(Boolean)
+    .join(" · ");
+
+  // Primary action: resume/play the next episode, or the movie itself
+  const playTarget = isSeries ? nextEpisode : item;
+  const playLeft = playTarget ? minutesLeft(playTarget) : null;
+  const playPercent =
+    playTarget?.RunTimeTicks && playTarget.UserData?.PlaybackPositionTicks
+      ? (playTarget.UserData.PlaybackPositionTicks / playTarget.RunTimeTicks) * 100
+      : 0;
+  let playLabel = playLeft ? "Riprendi" : "Riproduci";
+  if (isSeries && nextEpisode) {
+    playLabel += ` S${nextEpisode.ParentIndexNumber ?? 1}, E${nextEpisode.IndexNumber ?? 1}`;
+  }
+
+  // The same actor can be listed once per role: keep the first entry only
+  const cast = (item.People ?? [])
+    .filter((p, i, all) => p.Type === "Actor" && all.findIndex((o) => o.Id === p.Id && o.Type === "Actor") === i)
+    .slice(0, 20);
+  const directors = (item.People ?? []).filter((p) => p.Type === "Director");
+  const runtimeMins = item.RunTimeTicks ? Math.round(item.RunTimeTicks / TICKS_PER_MINUTE) : null;
+
+  const infoRows: [string, string][] = [
+    ["Genere", item.Genres?.join(", ") ?? ""],
+    ["Anno", item.ProductionYear ? String(item.ProductionYear) : ""],
+    ["Durata", !isSeries && runtimeMins ? formatMinutes(runtimeMins) : ""],
+    [
+      "Stagioni",
+      isSeries && seasons.length > 0 ? String(seasons.length) : "",
+    ],
+    ["Classificazione", item.OfficialRating ?? ""],
+    ["Valutazione", item.CommunityRating ? `${item.CommunityRating.toFixed(1)} / 10` : ""],
+    ["Regia", directors.map((d) => d.Name).join(", ")],
+  ].filter(([, value]) => value !== "") as [string, string][];
+
+  const nextEpisodeIndex = episodes.findIndex((e) => e.Id === nextEpisode?.Id);
+
+  const refreshEpisodes = () => {
+    if (selectedSeasonId) {
+      JellyfinService.fetchEpisodes(session, id, selectedSeasonId).then(setEpisodes);
+    }
+  };
+
+  const heroImageTransform = [
+    {
+      translateY: scrollY.interpolate({
+        inputRange: [-heroHeight, 0, heroHeight],
+        outputRange: [-heroHeight / 2, 0, heroHeight * 0.35],
+        extrapolateRight: "clamp",
+      }),
+    },
+    {
+      scale: scrollY.interpolate({
+        inputRange: [-heroHeight, 0],
+        outputRange: [2, 1],
+        extrapolateRight: "clamp",
+      }),
+    },
+  ];
+  const compactOpacity = scrollY.interpolate({
+    inputRange: [heroHeight - headerHeight - 80, heroHeight - headerHeight],
+    outputRange: [0, 1],
+    extrapolate: "clamp",
+  });
 
   return (
     <View style={styles.container}>
-      {/* Floating Back Button */}
-      <Pressable
-        style={({ pressed }) => [styles.floatingBackButton, pressed && styles.floatingButtonPressed]}
-        onPress={() => {
-          haptics.light();
-          router.back();
-        }}
+      <Animated.ScrollView
+        contentInsetAdjustmentBehavior="never"
+        contentContainerStyle={styles.content}
+        scrollEventThrottle={16}
+        onScroll={Animated.event([{ nativeEvent: { contentOffset: { y: scrollY } } }], {
+          useNativeDriver: true,
+        })}
       >
-        <Ionicons name="chevron-back" size={24} color="#ffffff" />
-      </Pressable>
+        {/* Hero artwork */}
+        <View style={{ height: heroHeight }}>
+          <Animated.View style={[StyleSheet.absoluteFill, { transform: heroImageTransform }]}>
+            <Image
+              source={{
+                uri: JellyfinService.getImageUrl(session.serverUrl, item.Id, "Backdrop", 1280),
+              }}
+              style={StyleSheet.absoluteFill}
+              contentFit="cover"
+              transition={400}
+            />
+            <LinearGradient colors={["rgba(0,0,0,0.5)", "transparent"]} style={styles.topShade} />
+            <LinearGradient
+              colors={["transparent", "rgba(0,0,0,0.5)", Palette.background]}
+              locations={[0.35, 0.7, 1]}
+              style={StyleSheet.absoluteFill}
+            />
+          </Animated.View>
 
-      <ScrollView contentContainerStyle={styles.content}>
-        {/* Backdrop */}
-        <View style={styles.backdropContainer}>
-          <Image source={{ uri: backdropUrl }} style={styles.backdrop} resizeMode="cover" />
-          <View style={styles.backdropOverlay} />
-        </View>
-
-        {/* Main Info */}
-        <View style={styles.detailsContainer}>
-          <View style={styles.topRow}>
-            <Image source={{ uri: posterUrl }} style={styles.poster} resizeMode="cover" />
-            <View style={styles.topInfo}>
-              <Text style={styles.title}>{item.Name}</Text>
-              <View style={styles.metaRow}>
-                {item.ProductionYear && <Text style={styles.metaText}>{item.ProductionYear}</Text>}
-                {runtimeMins && <Text style={styles.metaText}>•  {runtimeMins} min</Text>}
-                {isSeries && seasons.length > 0 && (
-                  <Text style={styles.metaText}>
-                    •  {seasons.length} {seasons.length === 1 ? "stagione" : "stagioni"}
-                  </Text>
-                )}
-              </View>
-              {item.CommunityRating && (
-                <View style={styles.ratingRow}>
-                  <Ionicons name="star" size={16} color="#ffcc00" />
-                  <Text style={styles.ratingValue}>{item.CommunityRating.toFixed(1)}</Text>
-                  <Text style={styles.ratingMax}>/ 10</Text>
+          <View style={styles.heroContent}>
+            {showLogo ? (
+              <Image
+                source={{ uri: JellyfinService.getImageUrl(session.serverUrl, logoId, "Logo", 800) }}
+                style={{ width: width * 0.7, height: Math.min(100, width * 0.24) }}
+                contentFit="contain"
+                transition={300}
+                onError={() => setLogoFailed(true)}
+              />
+            ) : (
+              <Text style={styles.title} numberOfLines={3}>
+                {item.Name}
+              </Text>
+            )}
+            <Text style={styles.meta} numberOfLines={1}>
+              {meta}
+            </Text>
+            <View style={styles.badgeRow}>
+              {item.CommunityRating ? (
+                <View style={styles.ratingBadge}>
+                  <Ionicons name="star" size={10} color={Palette.label} />
+                  <Text style={styles.badgeText}>{item.CommunityRating.toFixed(1)}</Text>
                 </View>
-              )}
-              {item.Genres && item.Genres.length > 0 && (
-                <Text style={styles.genres} numberOfLines={2}>
-                  {item.Genres.join(" • ")}
-                </Text>
-              )}
-              {mediaBadges.length > 0 && (
-                <View style={styles.badgeRow}>
-                  {mediaBadges.map((badge) => (
-                    <View key={badge} style={styles.mediaBadge}>
-                      <Text style={styles.mediaBadgeText}>{badge}</Text>
-                    </View>
-                  ))}
+              ) : null}
+              {[item.OfficialRating, ...mediaBadges].filter(Boolean).map((badge) => (
+                <View key={badge} style={styles.badge}>
+                  <Text style={styles.badgeText}>{badge}</Text>
                 </View>
-              )}
+              ))}
             </View>
           </View>
+        </View>
 
-          {/* Quick Play button before plot */}
-          {isSeries ? (
-            nextEpisode ? (
-              <Pressable
-                style={({ pressed }) => [styles.playButton, pressed && styles.playButtonPressed]}
-                onPress={() => {
-                  haptics.medium();
-                  router.push(`/player/${nextEpisode.Id}`);
-                }}
-              >
-                <Ionicons name="play" size={20} color="#000000" />
-                <Text style={styles.playButtonText} numberOfLines={1}>
-                  RIPRODUCI S{nextEpisode.ParentIndexNumber ?? 1}:E{nextEpisode.IndexNumber ?? 1}
-                </Text>
-              </Pressable>
-            ) : null
-          ) : (
-            <Pressable
-              style={({ pressed }) => [styles.playButton, pressed && styles.playButtonPressed]}
-              onPress={() => {
-                haptics.medium();
-                router.push(`/player/${item.Id}`);
-              }}
-            >
-              <Ionicons name="play" size={20} color="#000000" />
-              <Text style={styles.playButtonText}>RIPRODUCI FILM</Text>
-            </Pressable>
+        <View style={styles.body}>
+          {playTarget && (
+            <>
+              <PillButton
+                label={playLabel}
+                icon="play"
+                onPress={() => play(playTarget.Id)}
+                style={styles.playButton}
+              />
+              {playLeft !== null && (
+                <View style={styles.resumeRow}>
+                  <ProgressBar percent={playPercent} style={styles.resumeBar} />
+                  <Text style={styles.resumeText}>{formatMinutes(playLeft)} rimasti</Text>
+                </View>
+              )}
+            </>
           )}
 
-          {/* Plot Synopsis (capped at 5 lines) */}
           {item.Overview && (
-            <View style={styles.synopsisContainer}>
-              <Text style={styles.sectionLabel}>TRAMA</Text>
-              <Text style={styles.overview} numberOfLines={5} ellipsizeMode="tail">
+            <Pressable
+              onPress={() => setOverviewExpanded((v) => !v)}
+              style={styles.overviewContainer}
+            >
+              <Text style={styles.overview} numberOfLines={overviewExpanded ? undefined : 3}>
                 {item.Overview}
               </Text>
-            </View>
+              {!overviewExpanded && <Text style={styles.moreLabel}>ALTRO</Text>}
+            </Pressable>
           )}
+        </View>
 
-          {/* TV Series Seasons & Episodes */}
-          {isSeries && (
-            <View style={styles.seriesSection}>
-              <Text style={styles.sectionLabel}>STAGIONI</Text>
+        {/* Seasons & episodes */}
+        {isSeries && (
+          <View style={styles.seriesSection}>
+            {seasons.length > 0 && (
               <ScrollView
                 horizontal
                 showsHorizontalScrollIndicator={false}
-                contentContainerStyle={styles.seasonsList}
+                contentContainerStyle={styles.seasonTabs}
               >
                 {seasons.map((season) => {
                   const isSelected = season.Id === selectedSeasonId;
                   return (
                     <Pressable
                       key={season.Id}
-                      style={[styles.seasonPill, isSelected && styles.seasonPillActive]}
                       onPress={() => {
                         haptics.selection();
                         setSelectedSeasonId(season.Id);
                       }}
+                      style={styles.seasonTab}
                     >
-                      <Text
-                        style={[
-                          styles.seasonPillText,
-                          isSelected && styles.seasonPillTextActive,
-                        ]}
-                      >
+                      <Text style={[styles.seasonTabText, isSelected && styles.seasonTabTextActive]}>
                         {season.Name}
                       </Text>
+                      {isSelected && <View style={styles.seasonIndicator} />}
                     </Pressable>
                   );
                 })}
               </ScrollView>
+            )}
 
-              <View style={styles.episodesHeader}>
-                <Text style={styles.sectionLabel}>EPISODI</Text>
+            {loadedSeasonId !== selectedSeasonId ? (
+              <View style={styles.episodesLoading}>
+                <ActivityIndicator color={Palette.label} />
               </View>
+            ) : episodes.length === 0 ? (
+              <Text style={styles.emptyEpisodesText}>Nessun episodio in questa stagione.</Text>
+            ) : (
+              <ScrollView
+                key={selectedSeasonId ?? "episodes"}
+                horizontal
+                showsHorizontalScrollIndicator={false}
+                decelerationRate="fast"
+                snapToInterval={episodeWidth + EPISODE_GAP}
+                contentOffset={{
+                  x: Math.max(0, nextEpisodeIndex) * (episodeWidth + EPISODE_GAP),
+                  y: 0,
+                }}
+                contentContainerStyle={styles.episodesList}
+              >
+                {episodes.map((ep) => (
+                  <EpisodeCard
+                    key={ep.Id}
+                    ep={ep}
+                    session={session}
+                    seriesId={id}
+                    width={episodeWidth}
+                    onRefresh={refreshEpisodes}
+                  />
+                ))}
+              </ScrollView>
+            )}
+          </View>
+        )}
 
-              {loadingEpisodes ? (
-                <View style={styles.episodesLoading}>
-                  <ActivityIndicator color="#ffffff" />
-                </View>
-              ) : episodes.length === 0 ? (
-                <Text style={styles.emptyEpisodesText}>
-                  Nessun episodio trovato in questa stagione.
-                </Text>
-              ) : (
-                <View style={styles.episodesList}>
-                  {episodes.map((ep) => (
-                    <EpisodeRowItem
-                      key={ep.Id}
-                      ep={ep}
-                      session={session}
-                      seriesId={id}
-                      onRefresh={() => {
-                        if (selectedSeasonId) {
-                          JellyfinService.fetchEpisodes(
-                            session,
-                            id,
-                            selectedSeasonId
-                          ).then(setEpisodes);
-                        }
-                      }}
-                    />
-                  ))}
-                </View>
-              )}
-            </View>
-          )}
-        </View>
-      </ScrollView>
+        {cast.length > 0 && (
+          <Shelf title="Cast e troupe" gap={16}>
+            {cast.map((person) => (
+              <CastMember key={person.Id} person={person} session={session} />
+            ))}
+          </Shelf>
+        )}
+
+        {infoRows.length > 0 && (
+          <View style={styles.infoSection}>
+            <Text style={styles.sectionTitle}>Informazioni</Text>
+            {infoRows.map(([label, value]) => (
+              <View key={label} style={styles.infoRow}>
+                <Text style={styles.infoLabel}>{label}</Text>
+                <Text style={styles.infoValue}>{value}</Text>
+              </View>
+            ))}
+          </View>
+        )}
+      </Animated.ScrollView>
+
+      {/* Floating header: back button + title that appears once the hero scrolls away */}
+      <View style={[styles.header, { height: headerHeight, paddingTop: insets.top }]} pointerEvents="box-none">
+        <Animated.View
+          style={[StyleSheet.absoluteFill, { opacity: compactOpacity }]}
+          pointerEvents="none"
+        >
+          <BlurView intensity={80} tint="dark" style={StyleSheet.absoluteFill} />
+          <View style={styles.hairline} />
+        </Animated.View>
+
+        <Pressable
+          onPress={() => {
+            haptics.light();
+            router.back();
+          }}
+          hitSlop={10}
+          style={styles.backButton}
+          accessibilityRole="button"
+          accessibilityLabel="Indietro"
+        >
+          <BlurView intensity={40} tint="dark" style={StyleSheet.absoluteFill} />
+          <Ionicons name="chevron-back" size={22} color={Palette.label} />
+        </Pressable>
+
+        <Animated.Text
+          style={[styles.compactTitle, { opacity: compactOpacity }]}
+          numberOfLines={1}
+        >
+          {item.Name}
+        </Animated.Text>
+        <View style={styles.backButtonSpacer} />
+      </View>
     </View>
   );
 }
 
-function EpisodeRowItem({
+function EpisodeCard({
   ep,
   session,
   seriesId,
+  width,
   onRefresh,
 }: {
   ep: JellyfinItem;
-  session: any;
+  session: JellyfinSession;
   seriesId: string;
+  width: number;
   onRefresh: () => void;
 }) {
-  const router = useRouter();
   const { openMenu } = useLiquidGlassMenu();
-  const touchScale = React.useRef(new Animated.Value(1)).current;
+  const { play } = useNativePlayer();
+  const { scale, onPressIn, onPressOut, bounce } = usePressScale(0.96);
 
-  const handlePressIn = () => {
-    Animated.spring(touchScale, {
-      toValue: 0.96,
-      friction: 6,
-      tension: 240,
-      useNativeDriver: true,
-    }).start();
-  };
-
-  const handlePressOut = () => {
-    Animated.spring(touchScale, {
-      toValue: 1,
-      friction: 5,
-      tension: 180,
-      useNativeDriver: true,
-    }).start();
-  };
-
-  const handleLongPress = () => {
-    Animated.sequence([
-      Animated.timing(touchScale, { toValue: 0.92, duration: 80, useNativeDriver: true }),
-      Animated.spring(touchScale, { toValue: 1, friction: 4, tension: 200, useNativeDriver: true }),
-    ]).start();
-    openMenu({
-      item: { ...ep, SeriesId: seriesId },
-      session,
-      onRefresh,
-    });
-  };
-
-  const epImageUrl = JellyfinService.getImageUrl(
-    session.serverUrl,
-    ep.Id,
-    "Primary",
-    400
-  );
-  const epMins = ep.RunTimeTicks
-    ? Math.round(ep.RunTimeTicks / (10000000 * 60))
-    : null;
+  const epMins = ep.RunTimeTicks ? Math.round(ep.RunTimeTicks / TICKS_PER_MINUTE) : null;
+  const left = minutesLeft(ep);
   const isPlayed = !!ep.UserData?.Played;
   const progress = ep.UserData?.PlayedPercentage || 0;
 
   return (
-    <Animated.View style={{ transform: [{ scale: touchScale }] }}>
+    <Animated.View style={{ width, transform: [{ scale }] }}>
       <Pressable
-        style={styles.episodeCard}
-        onPressIn={handlePressIn}
-        onPressOut={handlePressOut}
-        onPress={() => {
-          haptics.light();
-          router.push(`/player/${ep.Id}`);
+        onPressIn={onPressIn}
+        onPressOut={onPressOut}
+        onPress={() => play(ep.Id)}
+        onLongPress={() => {
+          bounce();
+          openMenu({ item: { ...ep, SeriesId: seriesId }, session, onRefresh });
         }}
-        onLongPress={handleLongPress}
         delayLongPress={300}
       >
-        <View style={styles.epThumbnailContainer}>
+        <View style={[styles.episodeArtwork, { width, height: (width * 9) / 16 }]}>
           <Image
-            source={{ uri: epImageUrl }}
-            style={styles.epThumbnail}
-            resizeMode="cover"
+            source={{ uri: JellyfinService.getImageUrl(session.serverUrl, ep.Id, "Primary", 640) }}
+            style={StyleSheet.absoluteFill}
+            contentFit="cover"
+            transition={250}
+            recyclingKey={ep.Id}
           />
-          <View style={styles.epPlayOverlay}>
-            <Ionicons
-              name="play-circle"
-              size={26}
-              color="rgba(255,255,255,0.85)"
-            />
-          </View>
-          <View style={styles.epProgressBarBg}>
-            <View
-              style={[
-                styles.epProgressBarFill,
-                {
-                  width: isPlayed
-                    ? "100%"
-                    : progress > 0
-                    ? `${progress}%`
-                    : "0%",
-                },
-              ]}
-            />
-          </View>
+          {isPlayed && (
+            <View style={styles.playedBadge}>
+              <Ionicons name="checkmark" size={13} color={Palette.buttonPrimaryLabel} />
+            </View>
+          )}
+          {!isPlayed && progress > 0 && (
+            <>
+              <LinearGradient colors={["transparent", "rgba(0,0,0,0.7)"]} style={styles.episodeShade} />
+              <ProgressBar percent={progress} style={styles.episodeProgress} />
+            </>
+          )}
         </View>
 
-        <View style={styles.epInfo}>
-          <Text
-            style={[styles.epTitle, isPlayed && styles.epTitlePlayed]}
-            numberOfLines={1}
-          >
-            {ep.IndexNumber !== undefined ? `${ep.IndexNumber}. ` : ""}
-            {ep.Name}
+        <Text style={styles.episodeOverline}>
+          EPISODIO {ep.IndexNumber ?? "–"}
+          {left ? ` · ${formatMinutes(left).toUpperCase()} RIMASTI` : ""}
+        </Text>
+        <Text style={styles.episodeTitle} numberOfLines={1}>
+          {ep.Name}
+        </Text>
+        {ep.Overview ? (
+          <Text style={styles.episodeOverview} numberOfLines={3}>
+            {ep.Overview}
           </Text>
-          {epMins && <Text style={styles.epDuration}>{epMins} min</Text>}
-        </View>
+        ) : null}
+        {epMins && <Text style={styles.episodeDuration}>{formatMinutes(epMins)}</Text>}
       </Pressable>
     </Animated.View>
+  );
+}
+
+function CastMember({ person, session }: { person: JellyfinPerson; session: JellyfinSession }) {
+  return (
+    <View style={styles.castMember}>
+      <View style={styles.castPhoto}>
+        {person.PrimaryImageTag ? (
+          <Image
+            source={{ uri: JellyfinService.getImageUrl(session.serverUrl, person.Id, "Primary", 240) }}
+            style={StyleSheet.absoluteFill}
+            contentFit="cover"
+            transition={250}
+          />
+        ) : (
+          <Text style={styles.castInitial}>{person.Name.charAt(0)}</Text>
+        )}
+      </View>
+      <Text style={styles.castName} numberOfLines={1}>
+        {person.Name}
+      </Text>
+      {person.Role ? (
+        <Text style={styles.castRole} numberOfLines={1}>
+          {person.Role}
+        </Text>
+      ) : null}
+    </View>
   );
 }
 
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: "#14181c",
-  },
-  floatingBackButton: {
-    position: "absolute",
-    top: 52,
-    left: 16,
-    zIndex: 20,
-    width: 40,
-    height: 40,
-    borderRadius: 20,
-    backgroundColor: "rgba(20, 24, 28, 0.75)",
-    justifyContent: "center",
-    alignItems: "center",
-    borderWidth: 1,
-    borderColor: "rgba(255, 255, 255, 0.2)",
-  },
-  floatingButtonPressed: {
-    opacity: 0.75,
-    transform: [{ scale: 0.95 }],
+    backgroundColor: Palette.background,
   },
   center: {
     flex: 1,
     justifyContent: "center",
     alignItems: "center",
-    backgroundColor: "#14181c",
+    backgroundColor: Palette.background,
   },
   content: {
     paddingBottom: 60,
   },
-  backdropContainer: {
-    width: "100%",
-    height: 250,
+  topShade: {
+    position: "absolute",
+    top: 0,
+    left: 0,
+    right: 0,
+    height: 140,
   },
-  backdrop: {
-    width: "100%",
-    height: "100%",
-    backgroundColor: "#1f252c",
-  },
-  backdropOverlay: {
-    ...StyleSheet.absoluteFill,
-    backgroundColor: "rgba(20, 24, 28, 0.45)",
-  },
-  detailsContainer: {
-    paddingHorizontal: 16,
-    marginTop: -60,
-  },
-  topRow: {
-    flexDirection: "row",
-    gap: 16,
-  },
-  poster: {
-    width: 120,
-    height: 180,
-    borderRadius: 8,
-    borderWidth: 1,
-    borderColor: "rgba(255, 255, 255, 0.15)",
-    backgroundColor: "#1f252c",
-  },
-  topInfo: {
-    flex: 1,
-    justifyContent: "flex-end",
+  heroContent: {
+    position: "absolute",
+    left: Gutter,
+    right: Gutter,
+    bottom: 12,
+    alignItems: "center",
+    gap: 10,
   },
   title: {
-    fontSize: 22,
-    fontWeight: "800",
-    color: "#ffffff",
-    marginBottom: 6,
+    ...Typography.largeTitle,
+    color: Palette.label,
+    textAlign: "center",
   },
-  metaRow: {
-    flexDirection: "row",
-    gap: 8,
-    marginBottom: 6,
-  },
-  metaText: {
-    color: "#9ab",
-    fontSize: 13,
-  },
-  ratingRow: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 5,
-    marginBottom: 6,
-  },
-  ratingValue: {
-    color: "#ffffff",
-    fontWeight: "700",
-    fontSize: 14,
-  },
-  ratingMax: {
-    color: "#677b8c",
-    fontSize: 11,
-  },
-  genres: {
-    color: "#677b8c",
-    fontSize: 12,
+  meta: {
+    ...Typography.footnote,
+    fontWeight: "500",
+    color: Palette.labelSecondary,
   },
   badgeRow: {
     flexDirection: "row",
     flexWrap: "wrap",
-    gap: 5,
-    marginTop: 8,
+    justifyContent: "center",
+    gap: 6,
   },
-  mediaBadge: {
-    paddingHorizontal: 6,
-    paddingVertical: 2,
-    borderRadius: 4,
+  badge: {
+    paddingHorizontal: 5,
+    paddingVertical: 1,
+    borderRadius: 3,
     borderWidth: 1,
-    borderColor: "rgba(255, 255, 255, 0.22)",
-    backgroundColor: "rgba(255, 255, 255, 0.06)",
+    borderColor: Palette.labelSecondary,
   },
-  mediaBadgeText: {
-    color: "#e2e4e8",
-    fontSize: 10,
+  ratingBadge: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 3,
+    paddingHorizontal: 5,
+    paddingVertical: 1,
+    borderRadius: 3,
+    borderWidth: 1,
+    borderColor: Palette.labelSecondary,
+  },
+  badgeText: {
+    ...Typography.caption2,
     fontWeight: "700",
-    letterSpacing: 0.5,
+    color: Palette.labelSecondary,
+  },
+  body: {
+    paddingHorizontal: Gutter,
+    paddingTop: 12,
   },
   playButton: {
-    backgroundColor: "#e2e4e8",
+    alignSelf: "stretch",
+  },
+  resumeRow: {
     flexDirection: "row",
     alignItems: "center",
-    justifyContent: "center",
-    gap: 8,
-    paddingVertical: 14,
-    paddingHorizontal: 16,
-    borderRadius: 8,
+    gap: 10,
+    marginTop: 12,
+  },
+  resumeBar: {
+    flex: 1,
+  },
+  resumeText: {
+    ...Typography.caption1,
+    fontWeight: "600",
+    color: Palette.labelSecondary,
+  },
+  overviewContainer: {
     marginTop: 20,
   },
-  playButtonPressed: {
-    opacity: 0.85,
-    transform: [{ scale: 0.98 }],
-  },
-  playButtonText: {
-    color: "#000000",
-    fontWeight: "800",
-    fontSize: 14,
-    letterSpacing: 0.5,
-  },
-  synopsisContainer: {
-    marginTop: 22,
-  },
-  sectionLabel: {
-    fontSize: 12,
-    fontWeight: "800",
-    color: "#89a",
-    letterSpacing: 1.2,
-    textTransform: "uppercase",
-    marginBottom: 8,
-  },
   overview: {
-    color: "#ccd",
-    fontSize: 14,
-    lineHeight: 22,
+    ...Typography.subhead,
+    color: Palette.label,
+  },
+  moreLabel: {
+    ...Typography.caption1,
+    fontWeight: "700",
+    color: Palette.labelSecondary,
+    marginTop: 4,
   },
   seriesSection: {
-    marginTop: 24,
+    marginTop: 28,
+    marginBottom: 32,
   },
-  seasonsList: {
-    gap: 8,
-    marginBottom: 20,
+  seasonTabs: {
+    paddingHorizontal: Gutter,
+    gap: 22,
+    marginBottom: 16,
   },
-  seasonPill: {
-    paddingHorizontal: 16,
-    paddingVertical: 8,
-    borderRadius: 8,
-    backgroundColor: "#1f252c",
-    borderWidth: 1,
-    borderColor: "#2c3440",
+  seasonTab: {
+    paddingVertical: 6,
   },
-  seasonPillActive: {
-    backgroundColor: "#e2e4e8",
-    borderColor: "#e2e4e8",
+  seasonTabText: {
+    ...Typography.headline,
+    color: Palette.labelSecondary,
   },
-  seasonPillText: {
-    color: "#9ab",
-    fontSize: 13,
-    fontWeight: "700",
+  seasonTabTextActive: {
+    color: Palette.label,
   },
-  seasonPillTextActive: {
-    color: "#000000",
-    fontWeight: "800",
-  },
-  episodesHeader: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    alignItems: "center",
-    marginBottom: 10,
-  },
-  episodesCount: {
-    color: "#677b8c",
-    fontSize: 12,
-    fontWeight: "600",
+  seasonIndicator: {
+    height: 2,
+    borderRadius: 1,
+    backgroundColor: Palette.label,
+    marginTop: 6,
   },
   episodesLoading: {
-    paddingVertical: 30,
+    paddingVertical: 40,
     alignItems: "center",
   },
   emptyEpisodesText: {
-    color: "#677b8c",
-    fontSize: 13,
-    fontStyle: "italic",
+    ...Typography.footnote,
+    color: Palette.labelSecondary,
+    paddingHorizontal: Gutter,
     paddingVertical: 12,
   },
   episodesList: {
-    gap: 6,
+    paddingHorizontal: Gutter,
+    gap: EPISODE_GAP,
   },
-  episodeCard: {
-    flexDirection: "row",
-    backgroundColor: "#1f252c",
-    borderRadius: 6,
+  episodeArtwork: {
+    borderRadius: Radius.card,
     overflow: "hidden",
-    borderWidth: 1,
-    borderColor: "#2c3440",
+    backgroundColor: Palette.surface,
+    marginBottom: 10,
   },
-  episodeCardPressed: {
-    opacity: 0.8,
-  },
-  epThumbnailContainer: {
-    width: 120,
-    height: 75,
-    borderRadius: 4,
-    overflow: "hidden",
-    position: "relative",
-    backgroundColor: "#14181c",
-  },
-  epThumbnail: {
-    width: "100%",
-    height: "100%",
-  },
-  epPlayOverlay: {
-    ...StyleSheet.absoluteFill,
-    backgroundColor: "rgba(0,0,0,0.25)",
-    justifyContent: "center",
-    alignItems: "center",
-  },
-  epProgressBarBg: {
+  playedBadge: {
     position: "absolute",
-    bottom: 0,
+    top: 8,
+    right: 8,
+    width: 22,
+    height: 22,
+    borderRadius: 11,
+    backgroundColor: Palette.buttonPrimary,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  episodeShade: {
+    position: "absolute",
     left: 0,
     right: 0,
-    height: 3,
-    backgroundColor: "rgba(0,0,0,0.5)",
+    bottom: 0,
+    height: "45%",
   },
-  epProgressBarFill: {
-    height: "100%",
-    backgroundColor: "#ffffff",
+  episodeProgress: {
+    position: "absolute",
+    left: 12,
+    right: 12,
+    bottom: 10,
   },
-  epInfo: {
-    flex: 1,
-    padding: 10,
-    justifyContent: "center",
-  },
-  epTitle: {
-    color: "#ffffff",
-    fontSize: 14,
-    fontWeight: "700",
-    flex: 1,
-  },
-  epTitlePlayed: {
-    color: "#89a",
-  },
-  epDuration: {
-    color: "#8e8e93",
-    fontSize: 11,
+  episodeOverline: {
+    ...Typography.caption2,
     fontWeight: "600",
+    letterSpacing: 0.6,
+    color: Palette.labelSecondary,
+    marginBottom: 2,
+  },
+  episodeTitle: {
+    ...Typography.subhead,
+    fontWeight: "600",
+    color: Palette.label,
+  },
+  episodeOverview: {
+    ...Typography.footnote,
+    color: Palette.labelSecondary,
     marginTop: 4,
+  },
+  episodeDuration: {
+    ...Typography.caption1,
+    color: Palette.labelTertiary,
+    marginTop: 6,
+  },
+  castMember: {
+    width: 84,
+    alignItems: "center",
+  },
+  castPhoto: {
+    width: 84,
+    height: 84,
+    borderRadius: 42,
+    overflow: "hidden",
+    backgroundColor: Palette.surfaceElevated,
+    alignItems: "center",
+    justifyContent: "center",
+    marginBottom: 8,
+  },
+  castInitial: {
+    ...Typography.title2,
+    color: Palette.labelSecondary,
+  },
+  castName: {
+    ...Typography.caption1,
+    fontWeight: "600",
+    color: Palette.label,
+    textAlign: "center",
+  },
+  castRole: {
+    ...Typography.caption2,
+    color: Palette.labelSecondary,
+    textAlign: "center",
+    marginTop: 1,
+  },
+  infoSection: {
+    paddingHorizontal: Gutter,
+  },
+  sectionTitle: {
+    ...Typography.title2,
+    color: Palette.label,
+    marginBottom: 8,
+  },
+  infoRow: {
+    paddingVertical: 10,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    borderBottomColor: Palette.separator,
+  },
+  infoLabel: {
+    ...Typography.footnote,
+    color: Palette.labelSecondary,
+    marginBottom: 2,
+  },
+  infoValue: {
+    ...Typography.subhead,
+    color: Palette.label,
+  },
+  header: {
+    position: "absolute",
+    top: 0,
+    left: 0,
+    right: 0,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    paddingHorizontal: 16,
+  },
+  hairline: {
+    position: "absolute",
+    left: 0,
+    right: 0,
+    bottom: 0,
+    height: StyleSheet.hairlineWidth,
+    backgroundColor: Palette.separator,
+  },
+  backButton: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    overflow: "hidden",
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: Palette.glass,
+  },
+  backButtonSpacer: {
+    width: 36,
+  },
+  compactTitle: {
+    ...Typography.headline,
+    color: Palette.label,
+    flex: 1,
+    textAlign: "center",
+    marginHorizontal: 12,
   },
 });

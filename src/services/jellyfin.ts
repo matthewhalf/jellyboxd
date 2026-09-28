@@ -9,6 +9,12 @@ export interface JellyfinSession {
   serverId?: string;
 }
 
+/** A remembered login, so the user can switch between Jellyfin servers/accounts without retyping credentials. */
+export interface SavedServer extends JellyfinSession {
+  /** Stable key: serverUrl + userId, since the same server can have several saved users. */
+  id: string;
+}
+
 export interface MediaStreamInfo {
   Type: "Video" | "Audio" | "Subtitle";
   Codec?: string;
@@ -34,6 +40,14 @@ export interface MediaSourceInfo {
   MediaStreams?: MediaStreamInfo[];
 }
 
+export interface JellyfinPerson {
+  Id: string;
+  Name: string;
+  Role?: string;
+  Type?: "Actor" | "Director" | "Writer" | "Producer" | "GuestStar" | string;
+  PrimaryImageTag?: string;
+}
+
 export interface JellyfinItem {
   Id: string;
   Name: string;
@@ -47,6 +61,7 @@ export interface JellyfinItem {
     PlayedPercentage?: number;
     IsFavorite?: boolean;
     Played?: boolean;
+    LastPlayedDate?: string;
   };
   SeriesName?: string;
   SeriesId?: string;
@@ -55,10 +70,14 @@ export interface JellyfinItem {
   IndexNumber?: number; // Episode number or Season number
   ParentIndexNumber?: number; // Season number
   ParentBackdropItemId?: string;
+  ParentLogoItemId?: string;
+  ImageTags?: Partial<Record<"Primary" | "Logo" | "Thumb" | string, string>>;
+  BackdropImageTags?: string[];
   PremiereDate?: string;
   OfficialRating?: string;
   Genres?: string[];
   Taglines?: string[];
+  People?: JellyfinPerson[];
   MediaSources?: MediaSourceInfo[];
 }
 
@@ -69,7 +88,17 @@ const STORAGE_KEYS = {
   USER_NAME: "jellyboxd_user_name",
   DEVICE_ID: "jellyboxd_device_id",
   DEFAULT_BITRATE: "jellyboxd_default_bitrate",
+  SAVED_SERVERS: "jellyboxd_saved_servers",
 };
+
+function savedServerId(session: JellyfinSession): string {
+  return `${session.serverUrl}::${session.userId}`;
+}
+
+export type JellyfinImageType = "Primary" | "Backdrop" | "Thumb" | "Logo";
+
+const HOME_ITEM_FIELDS =
+  "Overview,RunTimeTicks,UserData,ParentBackdropItemId,SeriesId,SeriesName,Genres,OfficialRating,ProductionYear,CommunityRating";
 
 export class JellyfinService {
   private static deviceId = "jellyboxd-" + (Platform.OS === "ios" ? "ios" : "android");
@@ -191,6 +220,51 @@ export class JellyfinService {
     ]);
   }
 
+  /** All remembered server logins, most recently used first. */
+  static async getSavedServers(): Promise<SavedServer[]> {
+    try {
+      const raw = await SecureStore.getItemAsync(STORAGE_KEYS.SAVED_SERVERS);
+      if (!raw) return [];
+      const parsed = JSON.parse(raw);
+      return Array.isArray(parsed) ? parsed : [];
+    } catch {
+      return [];
+    }
+  }
+
+  /** Remembers (or updates the token for) a successful login, so it can be switched back to later. */
+  static async upsertSavedServer(session: JellyfinSession): Promise<SavedServer[]> {
+    const id = savedServerId(session);
+    const existing = await this.getSavedServers();
+    const next = [{ ...session, id }, ...existing.filter((s) => s.id !== id)];
+    await SecureStore.setItemAsync(STORAGE_KEYS.SAVED_SERVERS, JSON.stringify(next));
+    return next;
+  }
+
+  static async removeSavedServer(id: string): Promise<SavedServer[]> {
+    const existing = await this.getSavedServers();
+    const next = existing.filter((s) => s.id !== id);
+    await SecureStore.setItemAsync(STORAGE_KEYS.SAVED_SERVERS, JSON.stringify(next));
+    return next;
+  }
+
+  /** Makes an already-saved server the active session, reusing its stored token. */
+  static async switchToSavedServer(server: SavedServer): Promise<JellyfinSession> {
+    await this.initDeviceId();
+
+    try {
+      await this.fetchWithTimeoutAndRetry(`${server.serverUrl}/System/Info/Public`, {}, 0, 6000);
+    } catch {
+      throw new Error(
+        `Impossibile raggiungere il server "${server.serverUrl}". Controlla che sia online e riprova.`
+      );
+    }
+
+    const { id: _id, ...session } = server;
+    await this.saveSession(session);
+    return session;
+  }
+
   static async login(
     rawServerUrl: string,
     username: string,
@@ -254,17 +328,102 @@ export class JellyfinService {
     };
 
     console.log(`[JellyfinService] Login completato per ${session.userName} (${session.userId})`);
-    await this.saveSession(session);
+    await Promise.all([this.saveSession(session), this.upsertSavedServer(session)]);
     return session;
   }
 
   static getImageUrl(
     serverUrl: string,
     itemId: string,
-    type: "Primary" | "Backdrop" | "Thumb" = "Primary",
+    type: JellyfinImageType = "Primary",
     maxWidth: number = 600
   ): string {
-    return `${serverUrl}/Items/${itemId}/Images/${type}?maxWidth=${maxWidth}&quality=85`;
+    // Logos carry transparency, so request PNG instead of a lossy re-encode
+    const format = type === "Logo" ? "&format=png" : "&quality=85";
+    return `${serverUrl}/Items/${itemId}/Images/${type}?maxWidth=${maxWidth}${format}`;
+  }
+
+  static getUserImageUrl(session: JellyfinSession, maxWidth: number = 120): string {
+    return `${session.serverUrl}/Users/${session.userId}/Images/Primary?maxWidth=${maxWidth}&quality=90`;
+  }
+
+  /** Id of the item whose Logo image represents `item` (episodes use their series logo). */
+  static getLogoItemId(item: JellyfinItem): string | null {
+    if (item.ImageTags?.Logo) return item.Id;
+    if (item.ParentLogoItemId) return item.ParentLogoItemId;
+    return null;
+  }
+
+  /**
+   * Series for the home hero carousel: the ones added most recently or that
+   * most recently received new episodes/seasons (DateLastContentAdded).
+   */
+  static async fetchFeatured(session: JellyfinSession, limit: number = 4): Promise<JellyfinItem[]> {
+    try {
+      const url = `${session.serverUrl}/Users/${session.userId}/Items?IncludeItemTypes=Series&Recursive=true&SortBy=DateLastContentAdded,DateCreated&SortOrder=Descending&ImageTypes=Backdrop&Limit=${limit}&Fields=${HOME_ITEM_FIELDS}`;
+      const res = await this.fetchWithTimeoutAndRetry(url, {
+        headers: this.getAuthHeaders(session.token),
+      });
+      if (!res.ok) return [];
+      const data = await res.json();
+      return data.Items || [];
+    } catch (e) {
+      console.warn("[JellyfinService] fetchFeatured error:", e);
+      return [];
+    }
+  }
+
+  /**
+   * Last time each series (or movie) was watched, from the most recently played episodes/movies.
+   * Keyed by SeriesId for episodes and by item Id for movies.
+   */
+  static async fetchLastPlayedDates(session: JellyfinSession): Promise<Map<string, number>> {
+    const dates = new Map<string, number>();
+    try {
+      const url = `${session.serverUrl}/Users/${session.userId}/Items?IncludeItemTypes=Episode,Movie&Recursive=true&Filters=IsPlayed&SortBy=DatePlayed&SortOrder=Descending&Limit=100&Fields=SeriesId`;
+      const res = await this.fetchWithTimeoutAndRetry(url, {
+        headers: this.getAuthHeaders(session.token),
+      });
+      if (!res.ok) return dates;
+      const data = await res.json();
+      for (const item of (data.Items || []) as JellyfinItem[]) {
+        const key = item.SeriesId || item.Id;
+        const played = item.UserData?.LastPlayedDate ? Date.parse(item.UserData.LastPlayedDate) : 0;
+        if (played > (dates.get(key) ?? 0)) dates.set(key, played);
+      }
+    } catch (e) {
+      console.warn("[JellyfinService] fetchLastPlayedDates error:", e);
+    }
+    return dates;
+  }
+
+  /**
+   * Single "Continua a guardare" list: in-progress items plus the next episode of each
+   * series, one card per series, ordered so the most recently watched series comes first.
+   */
+  static async fetchContinueWatching(session: JellyfinSession): Promise<JellyfinItem[]> {
+    const [resume, nextUp, lastPlayed] = await Promise.all([
+      this.fetchResumeItems(session),
+      this.fetchNextUp(session, 20),
+      this.fetchLastPlayedDates(session),
+    ]);
+    const seenIds = new Set(resume.map((i) => i.Id));
+    const seenSeries = new Set(resume.map((i) => i.SeriesId).filter(Boolean));
+    const upcoming = nextUp.filter((i) => {
+      if (seenIds.has(i.Id) || (i.SeriesId && seenSeries.has(i.SeriesId))) return false;
+      if (i.SeriesId) seenSeries.add(i.SeriesId);
+      return true;
+    });
+
+    const recency = (item: JellyfinItem) => {
+      const own = item.UserData?.LastPlayedDate ? Date.parse(item.UserData.LastPlayedDate) : 0;
+      return Math.max(own, lastPlayed.get(item.SeriesId || item.Id) ?? 0);
+    };
+    // Stable sort: items without any play date keep Jellyfin's order at the end
+    return [...resume, ...upcoming]
+      .map((item, index) => ({ item, index, time: recency(item) }))
+      .sort((a, b) => b.time - a.time || a.index - b.index)
+      .map(({ item }) => item);
   }
 
   static getStreamUrl(

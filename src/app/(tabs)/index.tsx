@@ -1,66 +1,72 @@
 import { Ionicons } from "@expo/vector-icons";
+import { BlurView } from "expo-blur";
 import { useFocusEffect, useRouter } from "expo-router";
-import React, { useCallback, useEffect, useState } from "react";
+import React, { useCallback, useState } from "react";
 import {
   ActivityIndicator,
-  Image,
+  Animated,
   Pressable,
   RefreshControl,
-  ScrollView,
   StyleSheet,
   Text,
+  useWindowDimensions,
   View,
 } from "react-native";
-import { SafeAreaView } from "react-native-safe-area-context";
-import { NextUpCard } from "../../components/NextUpCard";
-import { PosterCard } from "../../components/PosterCard";
-import { ResumeCard } from "../../components/ResumeCard";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { LoginScreen } from "../../components/LoginScreen";
+import { PosterCard } from "../../components/PosterCard";
+import { ContinueWatchingCard } from "../../components/tv/ContinueWatchingCard";
+import { HeroCarousel } from "../../components/tv/HeroCarousel";
+import { LandscapeCard } from "../../components/tv/LandscapeCard";
+import { Shelf } from "../../components/tv/Shelf";
+import { UserAvatar } from "../../components/tv/UserAvatar";
+import { Gutter, Palette, Radius, Typography } from "../../constants/theme";
 import { useAuth } from "../../context/AuthContext";
+import { usePlaybackFinished } from "../../context/NativePlayerContext";
 import { haptics } from "../../lib/haptics";
 import { JellyfinItem, JellyfinService } from "../../services/jellyfin";
 
-export default function HomeScreen() {
-  const { session, isLoading, logout } = useAuth();
-  const router = useRouter();
+const CONTINUE_GAP = 12;
 
-  const [resumeItems, setResumeItems] = useState<JellyfinItem[]>([]);
-  const [nextUpItems, setNextUpItems] = useState<JellyfinItem[]>([]);
+export default function HomeScreen() {
+  const { session, isLoading } = useAuth();
+  const router = useRouter();
+  const insets = useSafeAreaInsets();
+  const { width, height } = useWindowDimensions();
+
+  const [featured, setFeatured] = useState<JellyfinItem[]>([]);
+  const [continueItems, setContinueItems] = useState<JellyfinItem[]>([]);
   const [latestSeries, setLatestSeries] = useState<JellyfinItem[]>([]);
   const [moviesList, setMoviesList] = useState<JellyfinItem[]>([]);
   const [refreshing, setRefreshing] = useState(false);
   const [initialLoading, setInitialLoading] = useState(true);
   const [hasError, setHasError] = useState(false);
 
-  const loadData = async (isSilent: boolean = false) => {
+  const scrollY = useState(() => new Animated.Value(0))[0];
+
+  const heroHeight = Math.round(Math.min(height * 0.58, width * 1.25));
+  const continueWidth = Math.min(width * 0.72, 320);
+  const landscapeWidth = Math.min(width * 0.62, 280);
+  const headerHeight = insets.top + 52;
+
+  const loadData = async () => {
     if (!session) return;
     try {
-      const [resumesRes, nextUpRes, seriesRes, moviesRes] = await Promise.allSettled([
-        JellyfinService.fetchResumeItems(session),
-        JellyfinService.fetchNextUp(session, 20),
+      const results = await Promise.allSettled([
+        JellyfinService.fetchFeatured(session, 4),
+        JellyfinService.fetchContinueWatching(session),
         JellyfinService.fetchLatestSeries(session, 20),
         JellyfinService.fetchMovies(session, 20),
       ]);
+      const setters = [setFeatured, setContinueItems, setLatestSeries, setMoviesList];
 
       let anySuccess = false;
-      if (resumesRes.status === "fulfilled") {
-        setResumeItems(resumesRes.value);
-        if (resumesRes.value.length > 0) anySuccess = true;
-      }
-      if (nextUpRes.status === "fulfilled") {
-        setNextUpItems(nextUpRes.value);
-        if (nextUpRes.value.length > 0) anySuccess = true;
-      }
-      if (seriesRes.status === "fulfilled") {
-        setLatestSeries(seriesRes.value);
-        if (seriesRes.value.length > 0) anySuccess = true;
-      }
-      if (moviesRes.status === "fulfilled") {
-        setMoviesList(moviesRes.value);
-        if (moviesRes.value.length > 0) anySuccess = true;
-      }
-
-      setHasError(!anySuccess && (resumesRes.status === "rejected" || seriesRes.status === "rejected" || moviesRes.status === "rejected"));
+      results.forEach((res, i) => {
+        if (res.status !== "fulfilled") return;
+        setters[i](res.value);
+        if (res.value.length > 0) anySuccess = true;
+      });
+      setHasError(!anySuccess && results.some((r) => r.status === "rejected"));
     } catch (e) {
       console.error("Errore caricamento dati:", e);
       setHasError(true);
@@ -69,19 +75,23 @@ export default function HomeScreen() {
     }
   };
 
-  // Re-fetch automatically every time the home screen gains focus (e.g. returning from player)
+  // Re-fetch every time the home screen gains focus (e.g. returning from player)
   useFocusEffect(
     useCallback(() => {
       if (session) {
-        loadData(true);
-        // Secondary follow-up to catch delayed Jellyfin server-side NextUp recalculations
-        const timer = setTimeout(() => {
-          loadData(true);
-        }, 650);
+        loadData();
+        // Follow-up to catch delayed Jellyfin server-side NextUp recalculations
+        const timer = setTimeout(loadData, 650);
         return () => clearTimeout(timer);
       }
     }, [session])
   );
+
+  // The native player closes without navigation, so refresh explicitly
+  usePlaybackFinished(() => {
+    loadData();
+    setTimeout(loadData, 650);
+  });
 
   const onRefresh = async () => {
     haptics.selection();
@@ -93,7 +103,7 @@ export default function HomeScreen() {
   if (isLoading) {
     return (
       <View style={styles.center}>
-        <ActivityIndicator size="large" color="#ffffff" />
+        <ActivityIndicator size="large" color={Palette.label} />
       </View>
     );
   }
@@ -102,144 +112,105 @@ export default function HomeScreen() {
     return <LoginScreen />;
   }
 
-  return (
-    <SafeAreaView style={styles.safeArea} edges={["top", "left", "right"]}>
-      {/* Top Navbar */}
-      <View style={styles.header}>
-        <View style={styles.headerBrand}>
-          <Text style={styles.headerTitle}>JELLYBOXD</Text>
-          <Text style={styles.headerUser}>@{session.userName}</Text>
-        </View>
-        <Pressable
-          onPress={() => {
-            haptics.light();
-            router.push("/settings");
-          }}
-          style={styles.settingsButton}
-        >
-          <Ionicons name="settings-outline" size={21} color="#9ab" />
-        </Pressable>
-      </View>
+  const isEmpty =
+    featured.length === 0 &&
+    continueItems.length === 0 &&
+    latestSeries.length === 0 &&
+    moviesList.length === 0;
 
-      <ScrollView
+  // Header turns into frosted glass once the hero has scrolled away
+  const headerBackgroundOpacity = scrollY.interpolate({
+    inputRange: [heroHeight - headerHeight - 80, heroHeight - headerHeight],
+    outputRange: [0, 1],
+    extrapolate: "clamp",
+  });
+
+  return (
+    <View style={styles.screen}>
+      <Animated.ScrollView
+        contentInsetAdjustmentBehavior="never"
         contentContainerStyle={styles.scrollContent}
+        scrollEventThrottle={16}
+        onScroll={Animated.event([{ nativeEvent: { contentOffset: { y: scrollY } } }], {
+          useNativeDriver: true,
+        })}
         refreshControl={
           <RefreshControl
             refreshing={refreshing}
             onRefresh={onRefresh}
-            tintColor="#ffffff"
+            tintColor={Palette.label}
+            progressViewOffset={headerHeight}
           />
         }
       >
-        {/* 1. Continua a guardare */}
-        {resumeItems.length > 0 && (
-          <View style={styles.section}>
-            <View style={styles.sectionHeader}>
-              <Text style={styles.sectionTitle}>CONTINUA A GUARDARE</Text>
-            </View>
-            <ScrollView
-              horizontal
-              showsHorizontalScrollIndicator={false}
-              contentContainerStyle={styles.horizontalList}
-            >
-              {resumeItems.map((item, idx) => (
-                <ResumeCard
-                  key={item.Id}
-                  item={item}
-                  session={session}
-                  index={idx}
-                  onRefresh={loadData}
-                />
-              ))}
-            </ScrollView>
-          </View>
+        {featured.length > 0 ? (
+          <HeroCarousel
+            items={featured}
+            session={session}
+            width={width}
+            height={heroHeight}
+            scrollY={scrollY}
+          />
+        ) : (
+          <View style={{ height: headerHeight }} />
+        )}
+        <View style={styles.heroSpacer} />
+
+        {continueItems.length > 0 && (
+          <Shelf title="Continua a guardare" gap={CONTINUE_GAP}>
+            {continueItems.map((item, idx) => (
+              <ContinueWatchingCard
+                key={item.SeriesId || item.Id}
+                item={item}
+                session={session}
+                index={idx}
+                width={continueWidth}
+                gap={CONTINUE_GAP}
+                onRefresh={loadData}
+              />
+            ))}
+          </Shelf>
         )}
 
-        {/* 2. A Seguire (Next Up) with FLIP reorder & smooth cross-fade */}
-        {nextUpItems.length > 0 && (
-          <View style={styles.section}>
-            <View style={styles.sectionHeader}>
-              <Text style={styles.sectionTitle}>A SEGUIRE</Text>
-            </View>
-            <ScrollView
-              horizontal
-              showsHorizontalScrollIndicator={false}
-              contentContainerStyle={styles.horizontalList}
-            >
-              {nextUpItems.map((item, idx) => (
-                <NextUpCard
-                  key={item.SeriesId || item.Id}
-                  item={item}
-                  session={session}
-                  index={idx}
-                  onRefresh={loadData}
-                />
-              ))}
-            </ScrollView>
-          </View>
-        )}
-
-        {/* 3. Ultime Serie Aggiunte */}
         {latestSeries.length > 0 && (
-          <View style={styles.section}>
-            <View style={styles.sectionHeader}>
-              <Text style={styles.sectionTitle}>ULTIME SERIE AGGIUNTE</Text>
-            </View>
-            <ScrollView
-              horizontal
-              showsHorizontalScrollIndicator={false}
-              contentContainerStyle={styles.horizontalList}
-            >
-              {latestSeries.map((series) => (
-                <PosterCard
-                  key={series.Id}
-                  item={series}
-                  session={session}
-                  width={112}
-                  height={168}
-                  onRefresh={loadData}
-                  seriesOnly={true}
-                />
-              ))}
-            </ScrollView>
-          </View>
+          <Shelf title="Serie aggiunte di recente" onSeeAll={() => router.navigate("/series")}>
+            {latestSeries.map((series) => (
+              <LandscapeCard
+                key={series.Id}
+                item={series}
+                session={session}
+                width={landscapeWidth}
+                onRefresh={loadData}
+                seriesOnly
+              />
+            ))}
+          </Shelf>
         )}
 
-        {/* 4. I Miei Film */}
         {moviesList.length > 0 && (
-          <View style={styles.section}>
-            <View style={styles.sectionHeader}>
-              <Text style={styles.sectionTitle}>I MIEI FILM</Text>
-            </View>
-            <ScrollView
-              horizontal
-              showsHorizontalScrollIndicator={false}
-              contentContainerStyle={styles.horizontalList}
-            >
-              {moviesList.map((movie) => (
-                <PosterCard
-                  key={movie.Id}
-                  item={movie}
-                  session={session}
-                  width={112}
-                  height={168}
-                  onRefresh={loadData}
-                />
-              ))}
-            </ScrollView>
+          <Shelf title="Film" onSeeAll={() => router.navigate("/movies")}>
+            {moviesList.map((movie) => (
+              <PosterCard
+                key={movie.Id}
+                item={movie}
+                session={session}
+                width={124}
+                height={186}
+                onRefresh={loadData}
+              />
+            ))}
+          </Shelf>
+        )}
+
+        {initialLoading && isEmpty && (
+          <View style={[styles.stateContainer, { height: heroHeight }]}>
+            <ActivityIndicator size="large" color={Palette.label} />
           </View>
         )}
 
-        {initialLoading && resumeItems.length === 0 && nextUpItems.length === 0 && latestSeries.length === 0 && moviesList.length === 0 && (
-          <View style={styles.loadingContainer}>
-            <ActivityIndicator size="large" color="#ffffff" />
-            <Text style={styles.loadingText}>Caricamento libreria...</Text>
-          </View>
-        )}
-
-        {!initialLoading && hasError && resumeItems.length === 0 && nextUpItems.length === 0 && latestSeries.length === 0 && moviesList.length === 0 && (
-          <View style={styles.errorContainer}>
-            <Ionicons name="cloud-offline-outline" size={48} color="#e5a00d" />
+        {!initialLoading && hasError && isEmpty && (
+          <View style={styles.stateContainer}>
+            <Ionicons name="cloud-offline-outline" size={48} color={Palette.labelSecondary} />
             <Text style={styles.errorTitle}>Connessione non riuscita</Text>
             <Text style={styles.errorSubtitle}>
               Impossibile caricare i contenuti dal server Jellyfin.
@@ -251,192 +222,84 @@ export default function HomeScreen() {
                 loadData();
               }}
             >
-              <Ionicons name="refresh" size={16} color="#ffffff" style={{ marginRight: 6 }} />
               <Text style={styles.retryButtonText}>Riprova</Text>
             </Pressable>
           </View>
         )}
-      </ScrollView>
-    </SafeAreaView>
+      </Animated.ScrollView>
+
+      {/* Floating header: wordmark + Jellyfin profile picture */}
+      <View style={[styles.header, { height: headerHeight, paddingTop: insets.top }]}>
+        <Animated.View
+          style={[StyleSheet.absoluteFill, { opacity: headerBackgroundOpacity }]}
+          pointerEvents="none"
+        >
+          <BlurView intensity={80} tint="dark" style={StyleSheet.absoluteFill} />
+          <View style={styles.headerHairline} />
+        </Animated.View>
+
+        <Text style={styles.wordmark}>jellyboxd</Text>
+        <Pressable
+          onPress={() => {
+            haptics.light();
+            router.push("/settings");
+          }}
+          hitSlop={10}
+          accessibilityRole="button"
+          accessibilityLabel="Impostazioni"
+        >
+          <UserAvatar session={session} size={34} />
+        </Pressable>
+      </View>
+    </View>
   );
 }
 
 const styles = StyleSheet.create({
-  safeArea: {
+  screen: {
     flex: 1,
-    backgroundColor: "#14181c",
+    backgroundColor: Palette.background,
   },
   center: {
     flex: 1,
     justifyContent: "center",
     alignItems: "center",
-    backgroundColor: "#14181c",
-  },
-  header: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    alignItems: "center",
-    paddingHorizontal: 16,
-    paddingVertical: 12,
-    borderBottomWidth: 1,
-    borderBottomColor: "#1f252c",
-  },
-  headerBrand: {
-    flexDirection: "row",
-    alignItems: "baseline",
-    gap: 10,
-  },
-  headerTitle: {
-    fontSize: 22,
-    fontWeight: "900",
-    color: "#ffffff",
-    letterSpacing: 1.5,
-  },
-  headerUser: {
-    fontSize: 13,
-    color: "#8e8e93",
-    fontWeight: "600",
-  },
-  settingsButton: {
-    padding: 6,
+    backgroundColor: Palette.background,
   },
   scrollContent: {
-    paddingVertical: 14,
     paddingBottom: 110,
   },
-  section: {
-    marginBottom: 36,
+  heroSpacer: {
+    height: 24,
   },
-  sectionHeader: {
-    flexDirection: "row",
-    alignItems: "center",
-    paddingHorizontal: 16,
-    marginBottom: 10,
-    gap: 8,
-  },
-  sectionTitle: {
-    fontSize: 12,
-    fontWeight: "800",
-    color: "#89a",
-    letterSpacing: 1.2,
-    textTransform: "uppercase",
-  },
-  horizontalList: {
-    paddingHorizontal: 16,
-    gap: 0,
-  },
-  resumeCard: {
-    width: 210,
-  },
-  resumeThumbnailContainer: {
-    width: 210,
-    height: 118,
-    borderRadius: 8,
-    backgroundColor: "#1f252c",
-    overflow: "hidden",
-    position: "relative",
-    borderWidth: 1,
-    borderColor: "rgba(255,255,255,0.08)",
-  },
-  resumeThumbnail: {
-    width: "100%",
-    height: "100%",
-  },
-  timeBadge: {
+  header: {
     position: "absolute",
-    top: 8,
-    right: 8,
-    backgroundColor: "rgba(0, 0, 0, 0.75)",
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 4,
-    paddingHorizontal: 6,
-    paddingVertical: 3,
-    borderRadius: 4,
-  },
-  timeText: {
-    color: "#ffffff",
-    fontSize: 10,
-    fontWeight: "700",
-  },
-  resumePlayOverlay: {
-    ...StyleSheet.absoluteFill,
-    backgroundColor: "rgba(0,0,0,0.2)",
-    justifyContent: "center",
-    alignItems: "center",
-  },
-  progressBarBg: {
-    position: "absolute",
-    bottom: 0,
+    top: 0,
     left: 0,
     right: 0,
-    height: 3,
-    backgroundColor: "rgba(0,0,0,0.5)",
-  },
-  progressBarFill: {
-    height: "100%",
-    backgroundColor: "#ffffff",
-  },
-  resumeCardTitle: {
-    color: "#ffffff",
-    fontSize: 13,
-    fontWeight: "700",
-    marginTop: 6,
-  },
-  resumeCardSub: {
-    color: "#89a",
-    fontSize: 11,
-    marginTop: 2,
-  },
-  posterCard: {
-    width: 115,
-  },
-  posterImage: {
-    width: 115,
-    height: 170,
-    borderRadius: 8,
-    backgroundColor: "#1f252c",
-  },
-  ratingBadge: {
-    position: "absolute",
-    top: 6,
-    right: 6,
-    backgroundColor: "rgba(20, 24, 28, 0.85)",
     flexDirection: "row",
     alignItems: "center",
-    gap: 3,
-    paddingHorizontal: 5,
-    paddingVertical: 2,
-    borderRadius: 4,
+    justifyContent: "space-between",
+    paddingHorizontal: Gutter,
   },
-  ratingText: {
-    color: "#ffffff",
-    fontSize: 10,
-    fontWeight: "700",
+  headerHairline: {
+    position: "absolute",
+    left: 0,
+    right: 0,
+    bottom: 0,
+    height: StyleSheet.hairlineWidth,
+    backgroundColor: Palette.separator,
   },
-  cardTitle: {
-    color: "#ffffff",
-    fontSize: 12,
-    fontWeight: "600",
-    marginTop: 6,
+  wordmark: {
+    ...Typography.title1,
+    fontWeight: "900",
+    letterSpacing: -0.8,
+    color: Palette.label,
+    textShadowColor: "rgba(0,0,0,0.35)",
+    textShadowOffset: { width: 0, height: 1 },
+    textShadowRadius: 6,
   },
-  cardSub: {
-    color: "#677b8c",
-    fontSize: 11,
-    marginTop: 2,
-  },
-  loadingContainer: {
-    alignItems: "center",
-    justifyContent: "center",
-    paddingVertical: 60,
-    gap: 12,
-  },
-  loadingText: {
-    color: "#8e8e93",
-    fontSize: 13,
-    fontWeight: "500",
-  },
-  errorContainer: {
+  stateContainer: {
     alignItems: "center",
     justifyContent: "center",
     paddingHorizontal: 32,
@@ -444,32 +307,26 @@ const styles = StyleSheet.create({
     gap: 8,
   },
   errorTitle: {
-    color: "#ffffff",
-    fontSize: 16,
-    fontWeight: "700",
+    ...Typography.headline,
+    color: Palette.label,
     textAlign: "center",
     marginTop: 6,
   },
   errorSubtitle: {
-    color: "#8e8e93",
-    fontSize: 13,
+    ...Typography.footnote,
+    color: Palette.labelSecondary,
     textAlign: "center",
-    lineHeight: 18,
     marginBottom: 10,
   },
   retryButton: {
-    flexDirection: "row",
-    alignItems: "center",
-    backgroundColor: "#1f252c",
-    paddingHorizontal: 18,
+    backgroundColor: Palette.buttonPrimary,
+    paddingHorizontal: 24,
     paddingVertical: 10,
-    borderRadius: 8,
-    borderWidth: 1,
-    borderColor: "#303943",
+    borderRadius: Radius.pill,
   },
   retryButtonText: {
-    color: "#ffffff",
-    fontSize: 13,
+    ...Typography.subhead,
     fontWeight: "600",
+    color: Palette.buttonPrimaryLabel,
   },
 });

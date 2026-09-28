@@ -5,7 +5,7 @@ export default function TabLayout() {
   return (
     <NativeTabs
       tintColor="#ffffff"
-      backgroundColor="#14181c"
+      backgroundColor="#000000"
     >
       <NativeTabs.Trigger name="index">
         <NativeTabs.Trigger.Label>Home</NativeTabs.Trigger.Label>

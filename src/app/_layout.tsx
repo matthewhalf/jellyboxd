@@ -2,62 +2,64 @@ import { Stack } from "expo-router";
 import { StatusBar } from "expo-status-bar";
 import * as SystemUI from "expo-system-ui";
 import React, { useEffect } from "react";
+import { Palette, Typography } from "../constants/theme";
 import { AuthProvider } from "../context/AuthContext";
 import { LiquidGlassMenuProvider } from "../context/LiquidGlassMenuContext";
+import { NativePlayerProvider } from "../context/NativePlayerContext";
 
 export default function RootLayout() {
   useEffect(() => {
     try {
-      SystemUI.setBackgroundColorAsync("#14181c");
+      SystemUI.setBackgroundColorAsync(Palette.background);
     } catch {}
   }, []);
 
   return (
     <AuthProvider>
-      <LiquidGlassMenuProvider>
-        <StatusBar style="light" />
-        <Stack
-          screenOptions={{
-            headerStyle: { backgroundColor: "#14181c" },
-            headerTintColor: "#ffffff",
-            headerTitleStyle: { fontWeight: "700", color: "#ffffff" },
-            contentStyle: { backgroundColor: "#14181c" },
-          }}
-        >
-          <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
-          <Stack.Screen
-            name="library/[id]"
-            options={{ title: "Library", headerBackTitle: "Home" }}
-          />
-          <Stack.Screen
-            name="item/[id]"
-            options={{
-              headerShown: false,
-              animation: "slide_from_right",
-              gestureEnabled: true,
-              fullScreenGestureEnabled: false,
-              contentStyle: { backgroundColor: "#14181c" },
+      <NativePlayerProvider>
+        <LiquidGlassMenuProvider>
+          <StatusBar style="light" />
+          <Stack
+            screenOptions={{
+              headerStyle: { backgroundColor: Palette.background },
+              headerTintColor: Palette.label,
+              headerTitleStyle: { ...Typography.headline, color: Palette.label },
+              headerShadowVisible: false,
+              contentStyle: { backgroundColor: Palette.background },
             }}
-          />
-          <Stack.Screen
-            name="player/[id]"
-            options={{
-              headerShown: false,
-              presentation: "fullScreenModal",
-              animation: "fade",
-            }}
-          />
-          <Stack.Screen
-            name="settings"
-            options={{
-              headerShown: false,
-              animation: "slide_from_right",
-              gestureEnabled: true,
-              contentStyle: { backgroundColor: "#14181c" },
-            }}
-          />
-        </Stack>
-      </LiquidGlassMenuProvider>
+          >
+            <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
+            <Stack.Screen
+              name="library/[id]"
+              options={{ title: "Libreria", headerBackTitle: "Indietro" }}
+            />
+            <Stack.Screen
+              name="item/[id]"
+              options={{
+                headerShown: false,
+                animation: "slide_from_right",
+                gestureEnabled: true,
+                fullScreenGestureEnabled: false,
+              }}
+            />
+            <Stack.Screen
+              name="settings"
+              options={{
+                headerShown: false,
+                animation: "slide_from_right",
+                gestureEnabled: true,
+              }}
+            />
+            <Stack.Screen
+              name="add-server"
+              options={{
+                headerShown: false,
+                presentation: "modal",
+              }}
+            />
+          </Stack>
+        </LiquidGlassMenuProvider>
+      </NativePlayerProvider>
     </AuthProvider>
   );
 }

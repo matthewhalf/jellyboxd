@@ -1,148 +1,85 @@
-import { Ionicons } from "@expo/vector-icons";
+import { Image } from "expo-image";
 import { useRouter } from "expo-router";
-import React, { useRef } from "react";
-import {
-  Animated,
-  Dimensions,
-  Image,
-  Pressable,
-  StyleSheet,
-  Text,
-  View,
-} from "react-native";
+import React from "react";
+import { Animated, Pressable, StyleSheet, Text, View } from "react-native";
+import { Palette, Radius, Typography } from "../constants/theme";
 import { useLiquidGlassMenu } from "../context/LiquidGlassMenuContext";
+import { usePressScale } from "../hooks/use-press-scale";
 import { haptics } from "../lib/haptics";
 import { JellyfinItem, JellyfinService, JellyfinSession } from "../services/jellyfin";
-
-const { width: SCREEN_WIDTH } = Dimensions.get("window");
-const CARD_WIDTH = (SCREEN_WIDTH - 48) / 3;
-const CARD_HEIGHT = CARD_WIDTH * 1.5;
 
 interface GridCardProps {
   item: JellyfinItem;
   session: JellyfinSession | null;
+  width: number;
   onRefresh?: () => void;
   seriesOnly?: boolean;
 }
 
+/** 2:3 poster tile for the 3-column library grids. */
 export const GridCard: React.FC<GridCardProps> = ({
   item,
   session,
+  width,
   onRefresh,
   seriesOnly = false,
 }) => {
   const router = useRouter();
   const { openMenu } = useLiquidGlassMenu();
-  const touchScale = useRef(new Animated.Value(1)).current;
-
-  const handlePressIn = () => {
-    Animated.spring(touchScale, {
-      toValue: 0.93,
-      friction: 6,
-      tension: 240,
-      useNativeDriver: true,
-    }).start();
-  };
-
-  const handlePressOut = () => {
-    Animated.spring(touchScale, {
-      toValue: 1,
-      friction: 5,
-      tension: 180,
-      useNativeDriver: true,
-    }).start();
-  };
-
-  const handleLongPress = () => {
-    Animated.sequence([
-      Animated.timing(touchScale, { toValue: 0.90, duration: 80, useNativeDriver: true }),
-      Animated.spring(touchScale, { toValue: 1, friction: 4, tension: 200, useNativeDriver: true }),
-    ]).start();
-    openMenu({ item, session, onRefresh, seriesOnly });
-  };
+  const { scale, onPressIn, onPressOut, bounce } = usePressScale(0.94);
 
   const imageUrl = session
-    ? JellyfinService.getImageUrl(session.serverUrl, item.Id, "Primary", 350)
+    ? JellyfinService.getImageUrl(session.serverUrl, item.Id, "Primary", 360)
     : "";
 
-  const rating = item.CommunityRating ? item.CommunityRating.toFixed(1) : null;
-  const isMovie = item.Type === "Movie";
-
   return (
-    <Animated.View
-      style={[
-        styles.card,
-        { transform: [{ scale: touchScale }] },
-      ]}
-    >
+    <Animated.View style={{ width, transform: [{ scale }] }}>
       <Pressable
-        onPressIn={handlePressIn}
-        onPressOut={handlePressOut}
+        onPressIn={onPressIn}
+        onPressOut={onPressOut}
         onPress={() => {
           haptics.light();
           router.push(`/item/${item.Id}`);
         }}
-        onLongPress={handleLongPress}
+        onLongPress={() => {
+          bounce();
+          openMenu({ item, session, onRefresh, seriesOnly });
+        }}
         delayLongPress={300}
       >
-        <Image
-          source={{ uri: imageUrl }}
-          style={styles.poster}
-          resizeMode="cover"
-        />
-        {rating && (
-          <View style={styles.ratingBadge}>
-            <Ionicons name="star" size={10} color="#ffcc00" />
-            <Text style={styles.ratingText}>{rating}</Text>
-          </View>
-        )}
+        <View style={[styles.poster, { width, height: width * 1.5 }]}>
+          <Image
+            source={{ uri: imageUrl }}
+            style={StyleSheet.absoluteFill}
+            contentFit="cover"
+            transition={250}
+            recyclingKey={item.Id}
+          />
+        </View>
         <Text style={styles.title} numberOfLines={1}>
           {item.Name}
         </Text>
-        {item.ProductionYear && (
-          <Text style={styles.sub}>{item.ProductionYear}</Text>
-        )}
+        {item.ProductionYear && <Text style={styles.sub}>{item.ProductionYear}</Text>}
       </Pressable>
     </Animated.View>
   );
 };
 
 const styles = StyleSheet.create({
-  card: {
-    width: CARD_WIDTH,
-  },
   poster: {
-    width: CARD_WIDTH,
-    height: CARD_HEIGHT,
-    borderRadius: 8,
-    backgroundColor: "#1f252d",
-    marginBottom: 6,
-  },
-  ratingBadge: {
-    position: "absolute",
-    top: 6,
-    right: 6,
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 3,
-    backgroundColor: "rgba(0, 0, 0, 0.75)",
-    paddingHorizontal: 6,
-    paddingVertical: 2,
-    borderRadius: 4,
-  },
-  ratingText: {
-    color: "#ffffff",
-    fontSize: 10,
-    fontWeight: "700",
+    borderRadius: Radius.card,
+    overflow: "hidden",
+    backgroundColor: Palette.surface,
+    marginBottom: 8,
   },
   title: {
-    fontSize: 12,
+    ...Typography.footnote,
     fontWeight: "600",
-    color: "#ffffff",
-    marginBottom: 2,
+    color: Palette.label,
   },
   sub: {
-    fontSize: 11,
-    color: "#9ab",
+    ...Typography.caption1,
+    color: Palette.labelSecondary,
+    marginTop: 1,
   },
 });

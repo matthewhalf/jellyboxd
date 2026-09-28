@@ -1,10 +1,9 @@
 import { Ionicons } from "@expo/vector-icons";
 import { BlurView } from "expo-blur";
 import { useRouter } from "expo-router";
-import React, { createContext, useContext, useRef, useState } from "react";
+import React, { createContext, useContext, useState } from "react";
 import {
   Animated,
-  Dimensions,
   Image,
   Modal,
   Pressable,
@@ -12,6 +11,7 @@ import {
   Text,
   View,
 } from "react-native";
+import { Palette, Radius, Typography } from "../constants/theme";
 import { haptics } from "../lib/haptics";
 import { JellyfinItem, JellyfinService, JellyfinSession } from "../services/jellyfin";
 
@@ -42,8 +42,8 @@ export function LiquidGlassMenuProvider({ children }: { children: React.ReactNod
   const [visible, setVisible] = useState(false);
   const [menuData, setMenuData] = useState<OpenMenuOptions | null>(null);
 
-  const scaleAnim = useRef(new Animated.Value(0.92)).current;
-  const opacityAnim = useRef(new Animated.Value(0)).current;
+  const scaleAnim = useState(() => new Animated.Value(0.92))[0];
+  const opacityAnim = useState(() => new Animated.Value(0))[0];
 
   const openMenu = (options: OpenMenuOptions) => {
     haptics.heavy();
@@ -198,13 +198,13 @@ export function LiquidGlassMenuProvider({ children }: { children: React.ReactNod
                     onPress={handleGoToSeries}
                   >
                     <View style={styles.iconCircle}>
-                      <Ionicons name="tv-outline" size={20} color="#ffffff" />
+                      <Ionicons name="tv-outline" size={20} color={Palette.label} />
                     </View>
                     <Text style={styles.actionText}>Vai alla serie</Text>
                     <Ionicons
                       name="chevron-forward"
                       size={18}
-                      color="#678"
+                      color={Palette.labelTertiary}
                       style={styles.chevron}
                     />
                   </Pressable>
@@ -227,7 +227,7 @@ export function LiquidGlassMenuProvider({ children }: { children: React.ReactNod
                             : "checkmark-circle-outline"
                         }
                         size={20}
-                        color={isPlayed ? "#ffffff" : "rgba(255,255,255,0.6)"}
+                        color={isPlayed ? Palette.label : Palette.labelSecondary}
                       />
                     </View>
                     <Text style={styles.actionText}>
@@ -236,7 +236,7 @@ export function LiquidGlassMenuProvider({ children }: { children: React.ReactNod
                     <Ionicons
                       name="chevron-forward"
                       size={18}
-                      color="#678"
+                      color={Palette.labelTertiary}
                       style={styles.chevron}
                     />
                   </Pressable>
@@ -261,8 +261,6 @@ export function LiquidGlassMenuProvider({ children }: { children: React.ReactNod
   );
 }
 
-const { width: SCREEN_WIDTH } = Dimensions.get("window");
-
 const styles = StyleSheet.create({
   modalOverlay: {
     flex: 1,
@@ -277,10 +275,10 @@ const styles = StyleSheet.create({
     maxWidth: 420,
   },
   sheetContainer: {
-    backgroundColor: "rgba(20, 24, 30, 0.78)",
-    borderRadius: 14,
+    backgroundColor: "rgba(28, 28, 30, 0.72)",
+    borderRadius: Radius.large + 4,
     borderWidth: 1,
-    borderColor: "rgba(255, 255, 255, 0.16)",
+    borderColor: "rgba(255, 255, 255, 0.12)",
     overflow: "hidden",
     padding: 16,
     paddingBottom: 14,
@@ -299,8 +297,8 @@ const styles = StyleSheet.create({
   headerThumb: {
     width: 58,
     height: 58,
-    borderRadius: 6,
-    backgroundColor: "#2c3440",
+    borderRadius: Radius.small,
+    backgroundColor: Palette.surfaceElevated,
     borderWidth: 1,
     borderColor: "rgba(255, 255, 255, 0.1)",
   },
@@ -310,14 +308,12 @@ const styles = StyleSheet.create({
     gap: 3,
   },
   headerTitle: {
-    fontSize: 16,
-    fontWeight: "700",
-    color: "#ffffff",
+    ...Typography.headline,
+    color: Palette.label,
   },
   headerSub: {
-    fontSize: 13,
-    color: "#9ab",
-    fontWeight: "500",
+    ...Typography.footnote,
+    color: Palette.labelSecondary,
   },
   divider: {
     height: 1,
@@ -346,9 +342,8 @@ const styles = StyleSheet.create({
   },
   actionText: {
     flex: 1,
-    fontSize: 15,
-    fontWeight: "600",
-    color: "#ffffff",
+    ...Typography.body,
+    color: Palette.label,
   },
   chevron: {
     marginLeft: 6,
@@ -356,19 +351,16 @@ const styles = StyleSheet.create({
   cancelButton: {
     marginTop: 8,
     paddingVertical: 12,
-    borderRadius: 8,
-    backgroundColor: "rgba(255, 255, 255, 0.07)",
+    borderRadius: Radius.pill,
+    backgroundColor: Palette.fillSecondary,
     alignItems: "center",
     justifyContent: "center",
-    borderWidth: 1,
-    borderColor: "rgba(255, 255, 255, 0.1)",
   },
   cancelButtonPressed: {
     backgroundColor: "rgba(255, 255, 255, 0.14)",
   },
   cancelText: {
-    fontSize: 15,
-    fontWeight: "700",
-    color: "#9ab",
+    ...Typography.headline,
+    color: Palette.label,
   },
 });

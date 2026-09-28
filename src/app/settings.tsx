@@ -1,54 +1,64 @@
 import { Ionicons } from "@expo/vector-icons";
+import { BlurView } from "expo-blur";
 import { Image } from "expo-image";
 import { useRouter } from "expo-router";
 import React, { useEffect, useState } from "react";
-import {
-  ActivityIndicator,
-  Alert,
-  Pressable,
-  ScrollView,
-  StyleSheet,
-  Text,
-  View,
-} from "react-native";
-import { SafeAreaView } from "react-native-safe-area-context";
+import { ActivityIndicator, Alert, Animated, Pressable, StyleSheet, Text, View } from "react-native";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
+import { UserAvatar } from "../components/tv/UserAvatar";
+import { Gutter, Palette, Radius, Typography } from "../constants/theme";
 import { useAuth } from "../context/AuthContext";
 import { haptics } from "../lib/haptics";
 import { JellyfinService } from "../services/jellyfin";
 
 const BITRATE_PRESETS = [
-  { label: "Originale (Direct Play)", bitrate: 0, sub: "Massima qualità senza compressione" },
-  { label: "1080p - 10 Mbps", bitrate: 10000000, sub: "Alta definizione ottimizzata" },
-  { label: "720p - 4 Mbps", bitrate: 4000000, sub: "Ideale sotto rete mobile 4G" },
-  { label: "480p - 1.5 Mbps", bitrate: 1500000, sub: "Basso consumo dati" },
+  { label: "Originale", bitrate: 0, sub: "Direct Play, massima qualità" },
+  { label: "1080p · 10 Mbps", bitrate: 10000000, sub: "Alta definizione ottimizzata" },
+  { label: "720p · 4 Mbps", bitrate: 4000000, sub: "Ideale su rete mobile" },
+  { label: "480p · 1,5 Mbps", bitrate: 1500000, sub: "Basso consumo dati" },
 ];
 
 export default function SettingsScreen() {
-  const { session, logout } = useAuth();
+  const { session, savedServers, switchServer, forgetServer, logout } = useAuth();
   const router = useRouter();
+  const insets = useSafeAreaInsets();
+  const [switchingId, setSwitchingId] = useState<string | null>(null);
+  const activeServerId = session ? `${session.serverUrl}::${session.userId}` : null;
 
-  const [serverInfo, setServerInfo] = useState<{
-    ServerName?: string;
-    Version?: string;
-    OperatingSystem?: string;
+  // Keyed by server id, so switching servers doesn't briefly show the previous one's info as current.
+  const [serverInfoResult, setServerInfoResult] = useState<{
+    serverId: string | null;
+    info: { ServerName?: string; Version?: string; OperatingSystem?: string } | null;
   } | null>(null);
-  const [loadingServerInfo, setLoadingServerInfo] = useState(false);
   const [selectedBitrate, setSelectedBitrate] = useState<number>(0);
   const [clearingCache, setClearingCache] = useState(false);
+  const [scrollY] = useState(() => new Animated.Value(0));
+
+  // Frosted bar + inline title appear only once the large title scrolls under them
+  const barOpacity = scrollY.interpolate({
+    inputRange: [20, 50],
+    outputRange: [0, 1],
+    extrapolate: "clamp",
+  });
 
   useEffect(() => {
     if (!session) return;
-    setLoadingServerInfo(true);
-    Promise.all([
-      JellyfinService.fetchServerInfo(session),
-      JellyfinService.getDefaultBitrate(),
-    ])
-      .then(([info, bitrate]) => {
-        setServerInfo(info);
+    let cancelled = false;
+    Promise.all([JellyfinService.fetchServerInfo(session), JellyfinService.getDefaultBitrate()]).then(
+      ([info, bitrate]) => {
+        if (cancelled) return;
+        setServerInfoResult({ serverId: activeServerId, info });
         setSelectedBitrate(bitrate);
-      })
-      .finally(() => setLoadingServerInfo(false));
-  }, [session]);
+      }
+    );
+    return () => {
+      cancelled = true;
+    };
+  }, [session, activeServerId]);
+
+  const loadingServerInfo = serverInfoResult?.serverId !== activeServerId;
+  const serverInfo = loadingServerInfo ? null : serverInfoResult?.info ?? null;
+  const isReachable = loadingServerInfo ? null : !!serverInfo;
 
   const handleSelectBitrate = async (bitrate: number) => {
     haptics.selection();
@@ -62,11 +72,7 @@ export default function SettingsScreen() {
     try {
       await Promise.all([Image.clearDiskCache(), Image.clearMemoryCache()]);
       haptics.success();
-      Alert.alert(
-        "Cache svuotata",
-        "La cache locale delle immagini è stata cancellata con successo.",
-        [{ text: "OK" }]
-      );
+      Alert.alert("Cache svuotata", "La cache locale delle immagini è stata cancellata.");
     } catch {
       Alert.alert("Errore", "Impossibile cancellare la cache delle immagini.");
     } finally {
@@ -74,197 +80,407 @@ export default function SettingsScreen() {
     }
   };
 
+  const handleSwitchServer = async (server: (typeof savedServers)[number]) => {
+    if (server.id === activeServerId) return;
+    haptics.light();
+    setSwitchingId(server.id);
+    try {
+      await switchServer(server);
+    } catch (err: any) {
+      haptics.error();
+      Alert.alert(
+        "Server non raggiungibile",
+        err.message || `Impossibile connettersi a "${server.serverUrl}".`
+      );
+    } finally {
+      setSwitchingId(null);
+    }
+  };
+
+  const handleForgetServer = (server: (typeof savedServers)[number]) => {
+    haptics.medium();
+    Alert.alert("Rimuovi server", `Dimenticare l'accesso a "${server.userName}" su ${server.serverUrl}?`, [
+      { text: "Annulla", style: "cancel" },
+      {
+        text: "Rimuovi",
+        style: "destructive",
+        onPress: () => {
+          forgetServer(server.id);
+          if (server.id === activeServerId) router.replace("/");
+        },
+      },
+    ]);
+  };
+
   const handleLogout = () => {
     haptics.medium();
-    Alert.alert(
-      "Disconnessione",
-      `Vuoi disconnetterti dall'account @${session?.userName}?`,
-      [
-        { text: "Annulla", style: "cancel" },
-        {
-          text: "Disconnetti",
-          style: "destructive",
-          onPress: () => {
-            haptics.warning();
-            logout();
-            router.replace("/");
-          },
+    Alert.alert("Disconnessione", `Vuoi disconnetterti dall'account ${session?.userName}?`, [
+      { text: "Annulla", style: "cancel" },
+      {
+        text: "Disconnetti",
+        style: "destructive",
+        onPress: () => {
+          haptics.warning();
+          logout();
+          router.replace("/");
         },
-      ]
-    );
+      },
+    ]);
   };
 
   return (
-    <SafeAreaView style={styles.safeArea} edges={["top", "left", "right"]}>
-      {/* Header */}
-      <View style={styles.header}>
+    <View style={styles.screen}>
+      <Animated.ScrollView
+        contentContainerStyle={[styles.scrollContent, { paddingTop: insets.top + 52 }]}
+        showsVerticalScrollIndicator={false}
+        scrollEventThrottle={16}
+        onScroll={Animated.event([{ nativeEvent: { contentOffset: { y: scrollY } } }], {
+          useNativeDriver: true,
+        })}
+      >
+        <Text style={styles.largeTitle}>Impostazioni</Text>
+
+        {session && (
+          <View style={styles.profileCard}>
+            <UserAvatar session={session} size={60} />
+            <View style={styles.profileText}>
+              <Text style={styles.profileName} numberOfLines={1}>
+                {session.userName}
+              </Text>
+              <Text style={styles.profileSub} numberOfLines={1}>
+                {serverInfo?.ServerName || session.serverUrl}
+              </Text>
+            </View>
+          </View>
+        )}
+
+        <Section title="Server">
+          <InfoRow
+            label="Nome"
+            value={loadingServerInfo ? null : serverInfo?.ServerName || "Jellyfin"}
+          />
+          <InfoRow
+            label="Versione Jellyfin"
+            value={loadingServerInfo ? null : serverInfo?.Version || "—"}
+          />
+          <InfoRow label="Indirizzo" value={session?.serverUrl || "—"} />
+          <View style={styles.row}>
+            <Text style={styles.rowLabel}>Stato</Text>
+            <View style={styles.status}>
+              {isReachable === null ? (
+                <ActivityIndicator size="small" color={Palette.labelSecondary} />
+              ) : (
+                <>
+                  <View style={[styles.statusDot, !isReachable && styles.statusDotOffline]} />
+                  <Text style={styles.rowValue}>{isReachable ? "Connesso" : "Non raggiungibile"}</Text>
+                </>
+              )}
+            </View>
+          </View>
+        </Section>
+
+        <Section title="I tuoi server" footer="Tocca un server per passare a quell'account.">
+          {savedServers.map((server) => {
+            const isActive = server.id === activeServerId;
+            return (
+              <Pressable
+                key={server.id}
+                style={({ pressed }) => [styles.row, pressed && styles.rowPressed]}
+                onPress={() => handleSwitchServer(server)}
+                disabled={switchingId !== null}
+              >
+                <View style={styles.rowTextCol}>
+                  <Text style={styles.rowLabel}>{server.userName}</Text>
+                  <Text style={styles.rowSub} numberOfLines={1}>
+                    {server.serverUrl}
+                  </Text>
+                </View>
+                {switchingId === server.id ? (
+                  <ActivityIndicator size="small" color={Palette.labelSecondary} />
+                ) : (
+                  <View style={styles.status}>
+                    {isActive && <Ionicons name="checkmark" size={20} color={Palette.label} />}
+                    <Pressable hitSlop={10} onPress={() => handleForgetServer(server)}>
+                      <Ionicons name="trash-outline" size={18} color={Palette.labelTertiary} />
+                    </Pressable>
+                  </View>
+                )}
+              </Pressable>
+            );
+          })}
+          <Pressable
+            style={({ pressed }) => [styles.row, pressed && styles.rowPressed]}
+            onPress={() => {
+              haptics.light();
+              router.push("/add-server");
+            }}
+          >
+            <Text style={styles.rowLabel}>Aggiungi un altro server</Text>
+            <Ionicons name="add-circle-outline" size={20} color={Palette.label} />
+          </Pressable>
+        </Section>
+
+        <Section
+          title="Qualità di streaming"
+          footer="Usata dal player all'avvio di ogni film o episodio."
+        >
+          {BITRATE_PRESETS.map((preset) => {
+            const isSelected = selectedBitrate === preset.bitrate;
+            return (
+              <Pressable
+                key={preset.bitrate}
+                style={({ pressed }) => [styles.row, pressed && styles.rowPressed]}
+                onPress={() => handleSelectBitrate(preset.bitrate)}
+              >
+                <View style={styles.rowTextCol}>
+                  <Text style={styles.rowLabel}>{preset.label}</Text>
+                  <Text style={styles.rowSub}>{preset.sub}</Text>
+                </View>
+                {isSelected && <Ionicons name="checkmark" size={20} color={Palette.label} />}
+              </Pressable>
+            );
+          })}
+        </Section>
+
+        <Section title="Account">
+          <InfoRow label="Nome utente" value={session?.userName || "—"} />
+          <InfoRow label="ID utente" value={session?.userId || "—"} small />
+        </Section>
+
+        <Section title="Archiviazione">
+          <Pressable
+            style={({ pressed }) => [styles.row, pressed && styles.rowPressed]}
+            onPress={handleClearCache}
+            disabled={clearingCache}
+          >
+            <Text style={styles.rowLabel}>Svuota cache immagini</Text>
+            {clearingCache && <ActivityIndicator size="small" color={Palette.labelSecondary} />}
+          </Pressable>
+        </Section>
+
+        <Section>
+          <Pressable
+            style={({ pressed }) => [styles.row, styles.centerRow, pressed && styles.rowPressed]}
+            onPress={handleLogout}
+          >
+            <Text style={styles.destructive}>Disconnetti</Text>
+          </Pressable>
+        </Section>
+      </Animated.ScrollView>
+
+      {/* Floating back button */}
+      <View style={[styles.header, { paddingTop: insets.top, height: insets.top + 52 }]}>
+        <Animated.View
+          style={[StyleSheet.absoluteFill, { opacity: barOpacity }]}
+          pointerEvents="none"
+        >
+          <BlurView intensity={80} tint="dark" style={StyleSheet.absoluteFill} />
+          <View style={styles.hairline} />
+        </Animated.View>
+        <Animated.Text
+          style={[styles.compactTitle, { top: insets.top, opacity: barOpacity }]}
+          pointerEvents="none"
+        >
+          Impostazioni
+        </Animated.Text>
         <Pressable
-          style={({ pressed }) => [styles.backButton, pressed && styles.backButtonPressed]}
           onPress={() => {
             haptics.light();
             router.back();
           }}
+          hitSlop={10}
+          style={styles.backButton}
+          accessibilityRole="button"
+          accessibilityLabel="Indietro"
         >
-          <Ionicons name="chevron-back" size={24} color="#ffffff" />
+          <Ionicons name="chevron-back" size={22} color={Palette.label} />
         </Pressable>
-        <Text style={styles.headerTitle}>Impostazioni</Text>
-        <View style={{ width: 36 }} />
       </View>
+    </View>
+  );
+}
 
-      <ScrollView
-        contentContainerStyle={styles.scrollContent}
-        showsVerticalScrollIndicator={false}
-      >
-        {/* Section 1: Server & Connessione */}
-        <View style={styles.section}>
-          <Text style={styles.sectionTitle}>SERVER & CONNESSIONE</Text>
-          <View style={styles.card}>
-            <View style={styles.row}>
-              <Text style={styles.rowLabel}>Nome Server</Text>
-              <Text style={styles.rowValue}>
-                {loadingServerInfo ? (
-                  <ActivityIndicator size="small" color="#8e8e93" />
-                ) : (
-                  serverInfo?.ServerName || "Jellyfin Server"
-                )}
-              </Text>
-            </View>
+function Section({
+  title,
+  footer,
+  children,
+}: {
+  title?: string;
+  footer?: string;
+  children: React.ReactNode;
+}) {
+  const rows = React.Children.toArray(children);
+  return (
+    <View style={styles.section}>
+      {title && <Text style={styles.sectionTitle}>{title.toUpperCase()}</Text>}
+      <View style={styles.card}>
+        {rows.map((row, i) => (
+          <React.Fragment key={i}>
+            {i > 0 && <View style={styles.divider} />}
+            {row}
+          </React.Fragment>
+        ))}
+      </View>
+      {footer && <Text style={styles.sectionFooter}>{footer}</Text>}
+    </View>
+  );
+}
 
-            <View style={styles.divider} />
-
-            <View style={styles.row}>
-              <Text style={styles.rowLabel}>Versione Jellyfin</Text>
-              <Text style={styles.rowValue}>
-                {loadingServerInfo ? "Caricamento..." : serverInfo?.Version || "10.x"}
-              </Text>
-            </View>
-
-            <View style={styles.divider} />
-
-            <View style={styles.row}>
-              <Text style={styles.rowLabel}>Indirizzo Server</Text>
-              <Text style={styles.rowValue} numberOfLines={1}>
-                {session?.serverUrl || "Non disponibile"}
-              </Text>
-            </View>
-
-            <View style={styles.divider} />
-
-            <View style={styles.row}>
-              <Text style={styles.rowLabel}>Stato Connessione</Text>
-              <View style={styles.statusBadge}>
-                <View style={styles.statusDot} />
-                <Text style={styles.statusText}>Connesso</Text>
-              </View>
-            </View>
-          </View>
-        </View>
-
-        {/* Section 2: Profilo Utente */}
-        <View style={styles.section}>
-          <Text style={styles.sectionTitle}>PROFILO UTENTE</Text>
-          <View style={styles.card}>
-            <View style={styles.row}>
-              <Text style={styles.rowLabel}>Nome Utente</Text>
-              <Text style={styles.rowValueHighlight}>@{session?.userName}</Text>
-            </View>
-
-            <View style={styles.divider} />
-
-            <View style={styles.row}>
-              <Text style={styles.rowLabel}>ID Utente</Text>
-              <Text style={[styles.rowValue, styles.monoText]} numberOfLines={1}>
-                {session?.userId}
-              </Text>
-            </View>
-          </View>
-        </View>
-
-        {/* Section 3: Riproduzione & Qualità Predefinita */}
-        <View style={styles.section}>
-          <Text style={styles.sectionTitle}>QUALITÀ STREAMING PREDEFINITA</Text>
-          <View style={styles.card}>
-            {BITRATE_PRESETS.map((preset, index) => {
-              const isSelected = selectedBitrate === preset.bitrate;
-              return (
-                <React.Fragment key={preset.bitrate}>
-                  {index > 0 && <View style={styles.divider} />}
-                  <Pressable
-                    style={({ pressed }) => [
-                      styles.selectableRow,
-                      pressed && styles.selectableRowPressed,
-                    ]}
-                    onPress={() => handleSelectBitrate(preset.bitrate)}
-                  >
-                    <View style={styles.selectableCol}>
-                      <Text style={[styles.selectableLabel, isSelected && styles.selectableLabelActive]}>
-                        {preset.label}
-                      </Text>
-                      <Text style={styles.selectableSub}>{preset.sub}</Text>
-                    </View>
-                    {isSelected && (
-                      <Ionicons name="checkmark" size={20} color="#ffffff" />
-                    )}
-                  </Pressable>
-                </React.Fragment>
-              );
-            })}
-          </View>
-        </View>
-
-        {/* Section 4: Archiviazione & Cache */}
-        <View style={styles.section}>
-          <Text style={styles.sectionTitle}>ARCHIVIAZIONE & CACHE</Text>
-          <View style={styles.card}>
-            <Pressable
-              style={({ pressed }) => [styles.actionRow, pressed && styles.actionRowPressed]}
-              onPress={handleClearCache}
-              disabled={clearingCache}
-            >
-              <View style={styles.actionCol}>
-                <Text style={styles.actionLabel}>Svuota cache immagini</Text>
-                <Text style={styles.actionSub}>Libera spazio di archiviazione locale su disco</Text>
-              </View>
-              {clearingCache ? (
-                <ActivityIndicator size="small" color="#8e8e93" />
-              ) : (
-                <Ionicons name="trash-outline" size={18} color="#89a" />
-              )}
-            </Pressable>
-          </View>
-        </View>
-
-        {/* Section 5: Account & Logout */}
-        <View style={styles.section}>
-          <Text style={styles.sectionTitle}>ACCOUNT</Text>
-          <View style={styles.card}>
-            <Pressable
-              style={({ pressed }) => [styles.logoutRow, pressed && styles.logoutRowPressed]}
-              onPress={handleLogout}
-            >
-              <Ionicons name="log-out-outline" size={20} color="#ff453a" />
-              <Text style={styles.logoutLabel}>Disconnetti</Text>
-            </Pressable>
-          </View>
-        </View>
-      </ScrollView>
-    </SafeAreaView>
+function InfoRow({ label, value, small }: { label: string; value: string | null; small?: boolean }) {
+  return (
+    <View style={styles.row}>
+      <Text style={styles.rowLabel}>{label}</Text>
+      {value === null ? (
+        <ActivityIndicator size="small" color={Palette.labelSecondary} />
+      ) : (
+        <Text style={[styles.rowValue, small && styles.rowValueSmall]} numberOfLines={1}>
+          {value}
+        </Text>
+      )}
+    </View>
   );
 }
 
 const styles = StyleSheet.create({
-  safeArea: {
+  screen: {
     flex: 1,
-    backgroundColor: "#14181c",
+    backgroundColor: Palette.background,
   },
-  header: {
+  scrollContent: {
+    paddingHorizontal: Gutter,
+    paddingBottom: 48,
+  },
+  largeTitle: {
+    ...Typography.largeTitle,
+    color: Palette.label,
+    marginBottom: 20,
+  },
+  profileCard: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 14,
+    padding: 16,
+    borderRadius: Radius.large,
+    backgroundColor: Palette.surface,
+    marginBottom: 28,
+  },
+  profileText: {
+    flex: 1,
+  },
+  profileName: {
+    ...Typography.title3,
+    color: Palette.label,
+  },
+  profileSub: {
+    ...Typography.footnote,
+    color: Palette.labelSecondary,
+    marginTop: 2,
+  },
+  section: {
+    marginBottom: 28,
+  },
+  sectionTitle: {
+    ...Typography.footnote,
+    color: Palette.labelSecondary,
+    marginBottom: 6,
+    paddingHorizontal: 16,
+  },
+  sectionFooter: {
+    ...Typography.footnote,
+    color: Palette.labelSecondary,
+    marginTop: 6,
+    paddingHorizontal: 16,
+  },
+  card: {
+    borderRadius: Radius.card,
+    backgroundColor: Palette.surface,
+    overflow: "hidden",
+  },
+  divider: {
+    height: StyleSheet.hairlineWidth,
+    backgroundColor: Palette.separator,
+    marginLeft: 16,
+  },
+  row: {
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "space-between",
+    gap: 12,
+    minHeight: 46,
     paddingHorizontal: 16,
-    paddingVertical: 12,
-    borderBottomWidth: 1,
-    borderBottomColor: "#1f252c",
+    paddingVertical: 11,
+  },
+  rowPressed: {
+    backgroundColor: Palette.surfaceElevated,
+  },
+  centerRow: {
+    justifyContent: "center",
+  },
+  rowTextCol: {
+    flex: 1,
+  },
+  rowLabel: {
+    ...Typography.body,
+    color: Palette.label,
+  },
+  rowSub: {
+    ...Typography.footnote,
+    color: Palette.labelSecondary,
+    marginTop: 1,
+  },
+  rowValue: {
+    ...Typography.body,
+    color: Palette.labelSecondary,
+    flexShrink: 1,
+    textAlign: "right",
+  },
+  rowValueSmall: {
+    ...Typography.footnote,
+  },
+  status: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+  },
+  statusDot: {
+    width: 8,
+    height: 8,
+    borderRadius: 4,
+    backgroundColor: "#30d158",
+  },
+  statusDotOffline: {
+    backgroundColor: "#ff453a",
+  },
+  destructive: {
+    ...Typography.body,
+    color: Palette.destructive,
+  },
+  header: {
+    position: "absolute",
+    top: 0,
+    left: 0,
+    right: 0,
+    flexDirection: "row",
+    alignItems: "center",
+    paddingHorizontal: 16,
+  },
+  hairline: {
+    position: "absolute",
+    left: 0,
+    right: 0,
+    bottom: 0,
+    height: StyleSheet.hairlineWidth,
+    backgroundColor: Palette.separator,
+  },
+  compactTitle: {
+    ...Typography.headline,
+    color: Palette.label,
+    position: "absolute",
+    left: 0,
+    right: 0,
+    bottom: 0,
+    lineHeight: 52,
+    textAlign: "center",
   },
   backButton: {
     width: 36,
@@ -272,157 +488,6 @@ const styles = StyleSheet.create({
     borderRadius: 18,
     alignItems: "center",
     justifyContent: "center",
-    backgroundColor: "rgba(255, 255, 255, 0.06)",
-  },
-  backButtonPressed: {
-    opacity: 0.7,
-  },
-  headerTitle: {
-    fontSize: 18,
-    fontWeight: "700",
-    color: "#ffffff",
-  },
-  scrollContent: {
-    paddingHorizontal: 16,
-    paddingVertical: 18,
-    paddingBottom: 40,
-  },
-  section: {
-    marginBottom: 26,
-  },
-  sectionTitle: {
-    fontSize: 12,
-    fontWeight: "800",
-    color: "#89a",
-    letterSpacing: 1.2,
-    textTransform: "uppercase",
-    marginBottom: 8,
-    paddingHorizontal: 4,
-  },
-  card: {
-    backgroundColor: "#1f252c",
-    borderRadius: 12,
-    borderWidth: 1,
-    borderColor: "#2c3440",
-    overflow: "hidden",
-  },
-  row: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "space-between",
-    paddingHorizontal: 16,
-    paddingVertical: 14,
-  },
-  divider: {
-    height: 1,
-    backgroundColor: "#2c3440",
-    marginLeft: 16,
-  },
-  rowLabel: {
-    fontSize: 14,
-    color: "#ffffff",
-    fontWeight: "500",
-  },
-  rowValue: {
-    fontSize: 14,
-    color: "#8e8e93",
-    maxWidth: "55%",
-    textAlign: "right",
-  },
-  rowValueHighlight: {
-    fontSize: 14,
-    color: "#ffffff",
-    fontWeight: "700",
-  },
-  monoText: {
-    fontSize: 12,
-    color: "#8e8e93",
-  },
-  statusBadge: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 6,
-    backgroundColor: "rgba(52, 199, 89, 0.12)",
-    paddingHorizontal: 8,
-    paddingVertical: 4,
-    borderRadius: 6,
-  },
-  statusDot: {
-    width: 6,
-    height: 6,
-    borderRadius: 3,
-    backgroundColor: "#34c759",
-  },
-  statusText: {
-    color: "#34c759",
-    fontSize: 12,
-    fontWeight: "700",
-  },
-  selectableRow: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "space-between",
-    paddingHorizontal: 16,
-    paddingVertical: 14,
-  },
-  selectableRowPressed: {
-    backgroundColor: "rgba(255, 255, 255, 0.05)",
-  },
-  selectableCol: {
-    flex: 1,
-    paddingRight: 12,
-  },
-  selectableLabel: {
-    fontSize: 14,
-    color: "#ffffff",
-    fontWeight: "600",
-  },
-  selectableLabelActive: {
-    fontWeight: "700",
-    color: "#ffffff",
-  },
-  selectableSub: {
-    fontSize: 12,
-    color: "#8e8e93",
-    marginTop: 2,
-  },
-  actionRow: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "space-between",
-    paddingHorizontal: 16,
-    paddingVertical: 14,
-  },
-  actionRowPressed: {
-    backgroundColor: "rgba(255, 255, 255, 0.05)",
-  },
-  actionCol: {
-    flex: 1,
-    paddingRight: 12,
-  },
-  actionLabel: {
-    fontSize: 14,
-    color: "#ffffff",
-    fontWeight: "600",
-  },
-  actionSub: {
-    fontSize: 12,
-    color: "#8e8e93",
-    marginTop: 2,
-  },
-  logoutRow: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 10,
-    paddingHorizontal: 16,
-    paddingVertical: 14,
-  },
-  logoutRowPressed: {
-    backgroundColor: "rgba(255, 69, 58, 0.08)",
-  },
-  logoutLabel: {
-    fontSize: 15,
-    fontWeight: "700",
-    color: "#ff453a",
+    backgroundColor: Palette.glass,
   },
 });

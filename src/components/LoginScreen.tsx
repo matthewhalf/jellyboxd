@@ -1,40 +1,50 @@
+import { Ionicons } from "@expo/vector-icons";
+import { Image } from "expo-image";
 import React, { useState } from "react";
 import {
   ActivityIndicator,
   Alert,
-  Image,
   KeyboardAvoidingView,
   Platform,
   Pressable,
   ScrollView,
   StyleSheet,
   Text,
-  TextInput,
   View,
 } from "react-native";
+import { Gutter, Palette, Radius, Typography } from "../constants/theme";
 import { useAuth } from "../context/AuthContext";
+import { haptics } from "../lib/haptics";
+import { SavedServer } from "../services/jellyfin";
+import { ServerLoginForm } from "./ServerLoginForm";
 
 export const LoginScreen: React.FC = () => {
-  const { login } = useAuth();
-  const [serverUrl, setServerUrl] = useState("");
-  const [username, setUsername] = useState("");
-  const [password, setPassword] = useState("");
-  const [isLoading, setIsLoading] = useState(false);
+  const { savedServers, switchServer, forgetServer } = useAuth();
+  const [switchingId, setSwitchingId] = useState<string | null>(null);
+  const hasSavedServers = savedServers.length > 0;
 
-  const handleLogin = async () => {
-    if (!serverUrl.trim() || !username.trim()) {
-      Alert.alert("Attenzione", "Inserisci l'indirizzo del server e lo username.");
-      return;
-    }
-
-    setIsLoading(true);
+  const handleSwitch = async (server: SavedServer) => {
+    haptics.light();
+    setSwitchingId(server.id);
     try {
-      await login(serverUrl.trim(), username.trim(), password);
+      await switchServer(server);
     } catch (err: any) {
-      Alert.alert("Errore di accesso", err.message || "Impossibile connettersi al server.");
+      haptics.error();
+      Alert.alert(
+        "Server non raggiungibile",
+        err.message || `Impossibile connettersi a "${server.serverUrl}".`
+      );
     } finally {
-      setIsLoading(false);
+      setSwitchingId(null);
     }
+  };
+
+  const handleForget = (server: SavedServer) => {
+    haptics.medium();
+    Alert.alert("Rimuovi server", `Dimenticare l'accesso a "${server.userName}" su ${server.serverUrl}?`, [
+      { text: "Annulla", style: "cancel" },
+      { text: "Rimuovi", style: "destructive", onPress: () => forgetServer(server.id) },
+    ]);
   };
 
   return (
@@ -47,65 +57,54 @@ export const LoginScreen: React.FC = () => {
           <Image
             source={require("../../assets/images/icon.png")}
             style={styles.logo}
-            resizeMode="contain"
+            contentFit="contain"
           />
-          <Text style={styles.title}>Jellyboxd</Text>
-          <Text style={styles.subtitle}>La tua libreria Jellyfin, con eleganza.</Text>
+          <Text style={styles.wordmark}>jellyboxd</Text>
+          <Text style={styles.subtitle}>
+            {hasSavedServers ? "Scegli un server o aggiungine uno nuovo" : "Accedi al tuo server Jellyfin"}
+          </Text>
         </View>
 
-        <View style={styles.card}>
-          <Text style={styles.label}>SERVER JELLYFIN</Text>
-          <TextInput
-            style={styles.input}
-            placeholder="http://192.168.1.238:8096"
-            placeholderTextColor="#677b8c"
-            value={serverUrl}
-            onChangeText={setServerUrl}
-            autoCapitalize="none"
-            autoCorrect={false}
-            keyboardType="url"
-          />
+        {hasSavedServers && (
+          <View style={styles.savedGroup}>
+            {savedServers.map((server, i) => (
+              <View key={server.id}>
+                {i > 0 && <View style={styles.divider} />}
+                <Pressable
+                  style={({ pressed }) => [styles.savedRow, pressed && styles.savedRowPressed]}
+                  onPress={() => handleSwitch(server)}
+                  disabled={switchingId !== null}
+                >
+                  <View style={styles.savedIcon}>
+                    <Ionicons name="server-outline" size={18} color={Palette.label} />
+                  </View>
+                  <View style={styles.savedTextCol}>
+                    <Text style={styles.savedName} numberOfLines={1}>
+                      {server.userName}
+                    </Text>
+                    <Text style={styles.savedSub} numberOfLines={1}>
+                      {server.serverUrl}
+                    </Text>
+                  </View>
+                  {switchingId === server.id ? (
+                    <ActivityIndicator size="small" color={Palette.labelSecondary} />
+                  ) : (
+                    <Pressable hitSlop={10} onPress={() => handleForget(server)}>
+                      <Ionicons name="trash-outline" size={18} color={Palette.labelTertiary} />
+                    </Pressable>
+                  )}
+                </Pressable>
+              </View>
+            ))}
+          </View>
+        )}
 
-          <Text style={styles.label}>USERNAME</Text>
-          <TextInput
-            style={styles.input}
-            placeholder="Il tuo username"
-            placeholderTextColor="#677b8c"
-            value={username}
-            onChangeText={setUsername}
-            autoCapitalize="none"
-            autoCorrect={false}
-          />
+        {hasSavedServers && <Text style={styles.orLabel}>OPPURE AGGIUNGI UN NUOVO SERVER</Text>}
 
-          <Text style={styles.label}>PASSWORD</Text>
-          <TextInput
-            style={styles.input}
-            placeholder="La tua password"
-            placeholderTextColor="#677b8c"
-            value={password}
-            onChangeText={setPassword}
-            secureTextEntry
-          />
-
-          <Pressable
-            style={({ pressed }) => [
-              styles.button,
-              pressed && styles.buttonPressed,
-              isLoading && styles.buttonDisabled,
-            ]}
-            onPress={handleLogin}
-            disabled={isLoading}
-          >
-            {isLoading ? (
-              <ActivityIndicator color="#000000" />
-            ) : (
-              <Text style={styles.buttonText}>CONNETTITI</Text>
-            )}
-          </Pressable>
-        </View>
+        <ServerLoginForm submitLabel={hasSavedServers ? "Aggiungi server" : "Accedi"} />
 
         <Text style={styles.footerText}>
-          Supporta Direct Play e sincronizzazione automatica dei progressi.
+          I progressi di visione vengono sincronizzati automaticamente con Jellyfin.
         </Text>
       </ScrollView>
     </KeyboardAvoidingView>
@@ -115,88 +114,88 @@ export const LoginScreen: React.FC = () => {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: "#14181c",
+    backgroundColor: Palette.background,
   },
   scrollContent: {
     flexGrow: 1,
     justifyContent: "center",
-    padding: 24,
+    paddingHorizontal: Gutter,
+    paddingVertical: 32,
   },
   brandContainer: {
     alignItems: "center",
-    marginBottom: 32,
+    marginBottom: 36,
   },
   logo: {
-    width: 90,
-    height: 90,
-    borderRadius: 22,
-    marginBottom: 16,
+    width: 84,
+    height: 84,
+    borderRadius: 20,
+    marginBottom: 18,
   },
-  title: {
-    fontSize: 32,
-    fontWeight: "800",
-    color: "#ffffff",
-    letterSpacing: 1.5,
+  wordmark: {
+    ...Typography.largeTitle,
+    fontWeight: "900",
+    letterSpacing: -0.8,
+    color: Palette.label,
   },
   subtitle: {
-    fontSize: 14,
-    color: "#9ab",
+    ...Typography.subhead,
+    color: Palette.labelSecondary,
     marginTop: 6,
-    textAlign: "center",
   },
-  card: {
-    backgroundColor: "#1f252c",
-    borderRadius: 16,
-    padding: 20,
-    borderWidth: 1,
-    borderColor: "#2c3440",
+  savedGroup: {
+    borderRadius: Radius.card,
+    backgroundColor: Palette.surface,
+    overflow: "hidden",
+    marginBottom: 18,
   },
-  label: {
-    fontSize: 11,
-    fontWeight: "700",
-    color: "#677b8c",
-    marginBottom: 6,
-    marginTop: 12,
-    letterSpacing: 1,
-  },
-  input: {
-    backgroundColor: "#14181c",
-    borderWidth: 1,
-    borderColor: "#2c3440",
-    borderRadius: 10,
-    paddingHorizontal: 14,
-    paddingVertical: 12,
-    color: "#ffffff",
-    fontSize: 15,
-  },
-  button: {
-    backgroundColor: "#e2e4e8",
-    borderRadius: 10,
-    paddingVertical: 14,
+  savedRow: {
+    flexDirection: "row",
     alignItems: "center",
-    marginTop: 24,
-    shadowColor: "#000000",
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.25,
-    shadowRadius: 8,
-    elevation: 4,
+    gap: 12,
+    paddingHorizontal: 16,
+    paddingVertical: 12,
   },
-  buttonPressed: {
-    opacity: 0.85,
-    transform: [{ scale: 0.98 }],
+  savedRowPressed: {
+    backgroundColor: Palette.surfaceElevated,
   },
-  buttonDisabled: {
-    opacity: 0.6,
+  savedIcon: {
+    width: 32,
+    height: 32,
+    borderRadius: 8,
+    backgroundColor: "rgba(255, 255, 255, 0.06)",
+    alignItems: "center",
+    justifyContent: "center",
   },
-  buttonText: {
-    color: "#000000",
-    fontSize: 15,
-    fontWeight: "800",
-    letterSpacing: 1,
+  savedTextCol: {
+    flex: 1,
+  },
+  savedName: {
+    ...Typography.body,
+    fontWeight: "600",
+    color: Palette.label,
+  },
+  savedSub: {
+    ...Typography.footnote,
+    color: Palette.labelSecondary,
+    marginTop: 1,
+  },
+  orLabel: {
+    ...Typography.caption1,
+    fontWeight: "600",
+    letterSpacing: 0.4,
+    color: Palette.labelTertiary,
+    textAlign: "center",
+    marginBottom: 10,
+  },
+  divider: {
+    height: StyleSheet.hairlineWidth,
+    backgroundColor: Palette.separator,
+    marginLeft: 16,
   },
   footerText: {
-    color: "#567",
-    fontSize: 12,
+    ...Typography.footnote,
+    color: Palette.labelTertiary,
     textAlign: "center",
     marginTop: 28,
   },
