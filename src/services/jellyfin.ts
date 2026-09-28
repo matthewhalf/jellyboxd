@@ -813,15 +813,26 @@ export class JellyfinService {
     } catch {}
   }
 
-  /** Starts a scan of every library on the server (admin accounts only). */
+  /**
+   * Rescans every library of the user (new/removed files) and downloads missing
+   * images, keeping existing metadata and artwork (admin accounts only).
+   */
   static async refreshLibrary(session: JellyfinSession): Promise<"ok" | "forbidden" | "error"> {
     try {
-      const res = await fetch(`${session.serverUrl}/Library/Refresh`, {
-        method: "POST",
-        headers: this.getAuthHeaders(session.token),
-      });
-      if (res.ok) return "ok";
-      return res.status === 401 || res.status === 403 ? "forbidden" : "error";
+      const libraries = await this.fetchLibraries(session);
+      if (libraries.length === 0) return "error";
+      const params =
+        "Recursive=true&MetadataRefreshMode=Default&ImageRefreshMode=FullRefresh&ReplaceAllMetadata=false&ReplaceAllImages=false";
+      const responses = await Promise.all(
+        libraries.map((library) =>
+          fetch(`${session.serverUrl}/Items/${library.Id}/Refresh?${params}`, {
+            method: "POST",
+            headers: this.getAuthHeaders(session.token),
+          })
+        )
+      );
+      if (responses.every((res) => res.ok)) return "ok";
+      return responses.some((res) => res.status === 401 || res.status === 403) ? "forbidden" : "error";
     } catch {
       return "error";
     }

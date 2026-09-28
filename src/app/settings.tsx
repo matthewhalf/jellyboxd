@@ -72,12 +72,16 @@ export default function SettingsScreen() {
     haptics.medium();
     setRefreshingLibrary(true);
     const result = await JellyfinService.refreshLibrary(session);
+    if (result === "ok") {
+      // Image URLs carry no version, so cached artwork would never pick up the new images
+      await Promise.all([Image.clearDiskCache(), Image.clearMemoryCache()]).catch(() => {});
+    }
     setRefreshingLibrary(false);
     if (result === "ok") {
       haptics.success();
       Alert.alert(
         "Aggiornamento avviato",
-        "Il server sta scansionando le librerie. I nuovi contenuti compariranno tra qualche minuto."
+        "Il server sta scansionando le librerie e scaricando le immagini mancanti. Nuovi contenuti e immagini compariranno tra qualche minuto."
       );
     } else {
       haptics.error();

@@ -79,6 +79,11 @@ export function NativePlayerProvider({ children }: { children: React.ReactNode }
   const endedRef = useRef(false);
   const finishingRef = useRef(false);
 
+  // The app is portrait-only; only the player (below) switches to landscape
+  useEffect(() => {
+    ScreenOrientation.lockAsync(ScreenOrientation.OrientationLock.PORTRAIT_UP).catch(() => {});
+  }, []);
+
   const play = async (itemId: string) => {
     if (!session || playerRef.current || isPreparing) return;
     haptics.medium();
@@ -121,10 +126,16 @@ export function NativePlayerProvider({ children }: { children: React.ReactNode }
       finishingRef.current = false;
       playerRef.current = newPlayer;
 
+      // Rotate the app itself before the native player is presented: once
+      // AVPlayerViewController is on screen iOS accepts the lock but won't rotate
+      // unless the device is turned, which never happens with rotation lock on
+      await ScreenOrientation.lockAsync(ScreenOrientation.OrientationLock.LANDSCAPE).catch(() => {});
+
       setPlayer(newPlayer);
       newPlayer.play();
       JellyfinService.reportPlaybackStart(session, itemId);
     } catch (e) {
+      ScreenOrientation.lockAsync(ScreenOrientation.OrientationLock.PORTRAIT_UP).catch(() => {});
       console.error("Errore avvio riproduzione:", e);
       Alert.alert("Riproduzione non riuscita", "Impossibile avviare il flusso video.");
     } finally {
@@ -150,6 +161,8 @@ export function NativePlayerProvider({ children }: { children: React.ReactNode }
 
     playerRef.current = null;
     setPlayer(null);
+    // Also covers sessions that end without a fullscreen exit event
+    ScreenOrientation.lockAsync(ScreenOrientation.OrientationLock.PORTRAIT_UP).catch(() => {});
     // Let the VideoView unmount before freeing the native player
     setTimeout(() => p.release(), 500);
 
