@@ -1,7 +1,7 @@
 import { Ionicons } from "@expo/vector-icons";
 import { BlurView } from "expo-blur";
 import { useFocusEffect, useRouter } from "expo-router";
-import React, { useCallback, useState } from "react";
+import React, { useCallback, useEffect, useRef, useState } from "react";
 import {
   ActivityIndicator,
   Animated,
@@ -27,6 +27,7 @@ import { haptics } from "../../lib/haptics";
 import { JellyfinItem, JellyfinService } from "../../services/jellyfin";
 
 const CONTINUE_GAP = 12;
+const LANDSCAPE_GAP = 12;
 
 export default function HomeScreen() {
   const { session, isLoading } = useAuth();
@@ -49,8 +50,26 @@ export default function HomeScreen() {
   const landscapeWidth = Math.min(width * 0.62, 280);
   const headerHeight = insets.top + 52;
 
+  // Switching server: drop the previous server's shelves right away and show the spinner
+  const sessionKey = session ? `${session.serverUrl}::${session.userId}` : null;
+  const [shownSessionKey, setShownSessionKey] = useState(sessionKey);
+  if (shownSessionKey !== sessionKey) {
+    setShownSessionKey(sessionKey);
+    setFeatured([]);
+    setContinueItems([]);
+    setLatestSeries([]);
+    setMoviesList([]);
+    setHasError(false);
+    setInitialLoading(true);
+  }
+  const activeSessionKey = useRef(sessionKey);
+  useEffect(() => {
+    activeSessionKey.current = sessionKey;
+  }, [sessionKey]);
+
   const loadData = async () => {
     if (!session) return;
+    const requestKey = sessionKey;
     try {
       const results = await Promise.allSettled([
         JellyfinService.fetchFeatured(session, 4),
@@ -58,6 +77,8 @@ export default function HomeScreen() {
         JellyfinService.fetchLatestSeries(session, 20),
         JellyfinService.fetchMovies(session, 20),
       ]);
+      // A slow response from the previous server must not overwrite the new one
+      if (activeSessionKey.current !== requestKey) return;
       const setters = [setFeatured, setContinueItems, setLatestSeries, setMoviesList];
 
       let anySuccess = false;
@@ -66,12 +87,14 @@ export default function HomeScreen() {
         setters[i](res.value);
         if (res.value.length > 0) anySuccess = true;
       });
-      setHasError(!anySuccess && results.some((r) => r.status === "rejected"));
+      // The fetchers swallow network/auth errors and return [], so "nothing at all" means failure
+      setHasError(!anySuccess);
     } catch (e) {
+      if (activeSessionKey.current !== requestKey) return;
       console.error("Errore caricamento dati:", e);
       setHasError(true);
     } finally {
-      setInitialLoading(false);
+      if (activeSessionKey.current === requestKey) setInitialLoading(false);
     }
   };
 
@@ -157,7 +180,11 @@ export default function HomeScreen() {
         <View style={styles.heroSpacer} />
 
         {continueItems.length > 0 && (
-          <Shelf title="Continua a guardare" gap={CONTINUE_GAP}>
+          <Shelf
+            title="Continua a guardare"
+            gap={CONTINUE_GAP}
+            snapInterval={continueWidth + CONTINUE_GAP}
+          >
             {continueItems.map((item, idx) => (
               <ContinueWatchingCard
                 key={item.SeriesId || item.Id}
@@ -173,7 +200,12 @@ export default function HomeScreen() {
         )}
 
         {latestSeries.length > 0 && (
-          <Shelf title="Serie aggiunte di recente" onSeeAll={() => router.navigate("/series")}>
+          <Shelf
+            title="Serie aggiunte di recente"
+            onSeeAll={() => router.navigate("/series")}
+            gap={LANDSCAPE_GAP}
+            snapInterval={landscapeWidth + LANDSCAPE_GAP}
+          >
             {latestSeries.map((series) => (
               <LandscapeCard
                 key={series.Id}

@@ -30,5 +30,11 @@ export function usePressScale(pressedScale: number = 0.95) {
     ]).start();
   };
 
-  return { scale, onPressIn, onPressOut, bounce };
+  /** Snaps back to rest with no spring, e.g. right before a navigation transition takes a snapshot. */
+  const reset = () => {
+    scale.stopAnimation();
+    scale.setValue(1);
+  };
+
+  return { scale, onPressIn, onPressOut, bounce, reset };
 }

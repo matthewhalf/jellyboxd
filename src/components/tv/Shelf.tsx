@@ -9,11 +9,13 @@ interface ShelfProps {
   /** When set, the title becomes tappable and shows a chevron. */
   onSeeAll?: () => void;
   gap?: number;
+  /** Card width + gap: the row snaps card by card instead of free-scrolling. */
+  snapInterval?: number;
   children: React.ReactNode;
 }
 
 /** Horizontal row of cards with an Apple TV+ style "Title ›" header. */
-export function Shelf({ title, onSeeAll, gap = 12, children }: ShelfProps) {
+export function Shelf({ title, onSeeAll, gap = 12, snapInterval, children }: ShelfProps) {
   return (
     <View style={styles.section}>
       <Pressable
@@ -33,6 +35,9 @@ export function Shelf({ title, onSeeAll, gap = 12, children }: ShelfProps) {
       <ScrollView
         horizontal
         showsHorizontalScrollIndicator={false}
+        decelerationRate={snapInterval ? "fast" : "normal"}
+        snapToInterval={snapInterval}
+        snapToAlignment={snapInterval ? "start" : undefined}
         contentContainerStyle={[styles.list, { gap }]}
       >
         {children}

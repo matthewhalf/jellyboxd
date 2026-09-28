@@ -32,6 +32,7 @@ export default function SettingsScreen() {
   } | null>(null);
   const [selectedBitrate, setSelectedBitrate] = useState<number>(0);
   const [clearingCache, setClearingCache] = useState(false);
+  const [refreshingLibrary, setRefreshingLibrary] = useState(false);
   const [scrollY] = useState(() => new Animated.Value(0));
 
   // Frosted bar + inline title appear only once the large title scrolls under them
@@ -64,6 +65,29 @@ export default function SettingsScreen() {
     haptics.selection();
     setSelectedBitrate(bitrate);
     await JellyfinService.setDefaultBitrate(bitrate);
+  };
+
+  const handleRefreshLibrary = async () => {
+    if (!session) return;
+    haptics.medium();
+    setRefreshingLibrary(true);
+    const result = await JellyfinService.refreshLibrary(session);
+    setRefreshingLibrary(false);
+    if (result === "ok") {
+      haptics.success();
+      Alert.alert(
+        "Aggiornamento avviato",
+        "Il server sta scansionando le librerie. I nuovi contenuti compariranno tra qualche minuto."
+      );
+    } else {
+      haptics.error();
+      Alert.alert(
+        "Aggiornamento non riuscito",
+        result === "forbidden"
+          ? "Solo un account amministratore può aggiornare le librerie del server."
+          : "Impossibile contattare il server. Riprova più tardi."
+      );
+    }
   };
 
   const handleClearCache = async () => {
@@ -177,6 +201,18 @@ export default function SettingsScreen() {
               )}
             </View>
           </View>
+          <Pressable
+            style={({ pressed }) => [styles.row, pressed && styles.rowPressed]}
+            onPress={handleRefreshLibrary}
+            disabled={refreshingLibrary}
+          >
+            <Text style={styles.rowLabel}>Aggiorna libreria</Text>
+            {refreshingLibrary ? (
+              <ActivityIndicator size="small" color={Palette.labelSecondary} />
+            ) : (
+              <Ionicons name="refresh" size={20} color={Palette.label} />
+            )}
+          </Pressable>
         </Section>
 
         <Section title="I tuoi server" footer="Tocca un server per passare a quell'account.">

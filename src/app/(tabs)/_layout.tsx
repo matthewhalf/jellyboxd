@@ -19,9 +19,9 @@ export default function TabLayout() {
         <NativeTabs.Trigger.Label>Film</NativeTabs.Trigger.Label>
         <NativeTabs.Trigger.Icon sf={{ default: "film", selected: "film.fill" }} />
       </NativeTabs.Trigger>
-      <NativeTabs.Trigger name="search">
+      <NativeTabs.Trigger name="search" role="search">
         <NativeTabs.Trigger.Label>Cerca</NativeTabs.Trigger.Label>
-        <NativeTabs.Trigger.Icon sf={{ default: "magnifyingglass", selected: "magnifyingglass" }} />
+        <NativeTabs.Trigger.Icon sf="magnifyingglass" md="search" />
       </NativeTabs.Trigger>
     </NativeTabs>
   );

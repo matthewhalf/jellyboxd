@@ -813,6 +813,20 @@ export class JellyfinService {
     } catch {}
   }
 
+  /** Starts a scan of every library on the server (admin accounts only). */
+  static async refreshLibrary(session: JellyfinSession): Promise<"ok" | "forbidden" | "error"> {
+    try {
+      const res = await fetch(`${session.serverUrl}/Library/Refresh`, {
+        method: "POST",
+        headers: this.getAuthHeaders(session.token),
+      });
+      if (res.ok) return "ok";
+      return res.status === 401 || res.status === 403 ? "forbidden" : "error";
+    } catch {
+      return "error";
+    }
+  }
+
   static async markItemPlayed(
     session: JellyfinSession,
     itemId: string,

@@ -1,7 +1,7 @@
 import { Ionicons } from "@expo/vector-icons";
 import { BlurView } from "expo-blur";
 import { useFocusEffect } from "expo-router";
-import React, { useCallback, useState } from "react";
+import React, { useCallback, useEffect, useRef, useState } from "react";
 import {
   ActivityIndicator,
   Animated,
@@ -51,14 +51,30 @@ export function PosterGridScreen({
   const cardWidth = (width - Gutter * 2 - COLUMN_GAP * (COLUMNS - 1)) / COLUMNS;
   const compactHeaderHeight = insets.top + 44;
 
+  // Switching server: drop the previous server's grid right away and show the spinner
+  const sessionKey = session ? `${session.serverUrl}::${session.userId}` : null;
+  const [shownSessionKey, setShownSessionKey] = useState(sessionKey);
+  if (shownSessionKey !== sessionKey) {
+    setShownSessionKey(sessionKey);
+    setItems([]);
+    setIsLoading(true);
+  }
+  const activeSessionKey = useRef(sessionKey);
+  useEffect(() => {
+    activeSessionKey.current = sessionKey;
+  }, [sessionKey]);
+
   const load = async () => {
     if (!session) return;
+    const requestKey = sessionKey;
     try {
-      setItems(await fetchItems(session));
+      const next = await fetchItems(session);
+      // A slow response from the previous server must not overwrite the new one
+      if (activeSessionKey.current === requestKey) setItems(next);
     } catch (e) {
       console.error(`Errore caricamento ${title}:`, e);
     } finally {
-      setIsLoading(false);
+      if (activeSessionKey.current === requestKey) setIsLoading(false);
     }
   };
 

@@ -7,6 +7,7 @@
     "@expo/ui": "~57.0.20",
     "@expo/vector-icons": "^15.1.1",
     "@jellyfin/sdk": "^1.0.0",
+    "@react-native-segmented-control/segmented-control": "2.5.7",
     "expo": "~57.0.25",
     "expo-blur": "~57.0.3",
     "expo-constants": "~57.0.19",

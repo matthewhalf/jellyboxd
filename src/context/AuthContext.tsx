@@ -47,6 +47,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const switchServer = async (server: SavedServer) => {
     const newSession = await JellyfinService.switchToSavedServer(server);
     setSession(newSession);
+    // Keep the saved list "most recently used first"
+    setSavedServers(await JellyfinService.upsertSavedServer(newSession));
   };
 
   const forgetServer = async (id: string) => {

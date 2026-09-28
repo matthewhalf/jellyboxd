@@ -21,10 +21,15 @@ export default function LibraryScreen() {
 
   useEffect(() => {
     if (!session || !id) return;
+    // Ignore the response if the server (or library) changed while it was in flight
+    let cancelled = false;
     JellyfinService.fetchLibraryItems(session, id)
-      .then(setItems)
+      .then((next) => !cancelled && setItems(next))
       .catch((err) => console.error("Errore fetch libreria:", err))
-      .finally(() => setIsLoading(false));
+      .finally(() => !cancelled && setIsLoading(false));
+    return () => {
+      cancelled = true;
+    };
   }, [session, id]);
 
   return (

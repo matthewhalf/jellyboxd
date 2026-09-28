@@ -28,9 +28,9 @@ function useMediaActions(item: JellyfinItem, session: JellyfinSession | null, on
   const router = useRouter();
   const { play } = useNativePlayer();
 
-  const seriesId = item.SeriesId || (item.Type === "Series" ? item.Id : null);
+  const isSeries = item.Type === "Series";
+  const seriesId = item.SeriesId || (isSeries ? item.Id : null);
   const isPlayed = !!item.UserData?.Played;
-  const isFavorite = !!item.UserData?.IsFavorite;
   const canPlay = item.Type === "Movie" || item.Type === "Episode";
   const inProgress = (item.UserData?.PlaybackPositionTicks || 0) > 0;
 
@@ -45,27 +45,31 @@ function useMediaActions(item: JellyfinItem, session: JellyfinSession | null, on
     }
   };
 
+  // Series play their Next Up episode; with none left, open the series page instead
+  const playNextEpisode = async () => {
+    if (!session) return;
+    const next = await JellyfinService.fetchNextUpForSeries(session, item.Id);
+    if (next) play(next.Id);
+    else router.push(`/item/${item.Id}`);
+  };
+
   return {
-    play: canPlay ? { title: inProgress ? "Riprendi" : "Riproduci", onPress: () => play(item.Id) } : null,
-    goToSeries:
-      seriesId && item.Type !== "Series"
-        ? { title: "Vai alla serie", onPress: () => router.push(`/item/${seriesId}`) }
+    play: canPlay
+      ? { title: inProgress ? "Riprendi" : "Riproduci", onPress: () => play(item.Id) }
+      : isSeries && session
+        ? { title: "Riproduci", onPress: playNextEpisode }
         : null,
+    goToSeries: seriesId
+      ? { title: "Vai alla serie", onPress: () => router.push(`/item/${seriesId}`) }
+      : null,
     togglePlayed:
-      !seriesOnly && item.Type !== "Series" && session
+      session && !isSeries && !seriesOnly
         ? {
             title: isPlayed ? "Segna come non visto" : "Segna come visto",
             isOn: isPlayed,
             onPress: () => run(() => JellyfinService.markItemPlayed(session, item.Id, !isPlayed)),
           }
         : null,
-    toggleFavorite: session
-      ? {
-          title: isFavorite ? "Rimuovi dai preferiti" : "Aggiungi ai preferiti",
-          isOn: isFavorite,
-          onPress: () => run(() => JellyfinService.setFavorite(session, item.Id, !isFavorite)),
-        }
-      : null,
   };
 }
 
@@ -73,7 +77,7 @@ function useMediaActions(item: JellyfinItem, session: JellyfinSession | null, on
  * Tappable media card:
  * - tap opens the detail page (iOS 18+: native zoom transition from the artwork) or plays
  * - long press opens the native context menu (iOS) or an action list (Android)
- * - springs down while pressed
+ * - springs down while pressed, snaps back instantly on tap
  */
 export function MediaLink({
   item,
@@ -89,18 +93,20 @@ export function MediaLink({
 }: MediaLinkProps) {
   const router = useRouter();
   const { play } = useNativePlayer();
-  const { scale, onPressIn, onPressOut } = usePressScale(pressedScale);
+  const { scale, onPressIn, onPressOut, reset } = usePressScale(pressedScale);
   const actions = useMediaActions(item, session, onRefresh, seriesOnly);
   const href = `/item/${item.Id}` as const;
 
   const handlePress = () => {
     haptics.light();
+    // Drop the release spring so the card doesn't bounce before the next screen appears
+    reset();
     if (playOnPress) play(item.Id);
     else router.push(href);
   };
 
   if (Platform.OS !== "ios") {
-    const list = [actions.play, actions.goToSeries, actions.togglePlayed, actions.toggleFavorite].filter(Boolean) as {
+    const list = [actions.play, actions.goToSeries, actions.togglePlayed].filter(Boolean) as {
       title: string;
       onPress: () => void;
     }[];
@@ -133,6 +139,8 @@ export function MediaLink({
         asChild
         onPress={(e) => {
           haptics.light();
+          // Drop the release spring so the zoom transition starts from a still card
+          reset();
           // Playback cards keep the Link only for the context menu
           if (playOnPress) {
             e.preventDefault();
@@ -160,13 +168,6 @@ export function MediaLink({
               title={actions.togglePlayed.title}
               icon={actions.togglePlayed.isOn ? "eye.slash" : "checkmark.circle"}
               onPress={actions.togglePlayed.onPress}
-            />
-          )}
-          {actions.toggleFavorite && (
-            <Link.MenuAction
-              title={actions.toggleFavorite.title}
-              icon={actions.toggleFavorite.isOn ? "heart.slash" : "heart"}
-              onPress={actions.toggleFavorite.onPress}
             />
           )}
         </Link.Menu>
