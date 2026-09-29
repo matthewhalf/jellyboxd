@@ -429,11 +429,13 @@ export default function ItemDetailScreen() {
         )}
 
         {cast.length > 0 && (
-          <Shelf title="Cast e troupe" gap={16}>
-            {cast.map((person) => (
-              <CastMember key={person.Id} person={person} session={session} />
-            ))}
-          </Shelf>
+          <View style={!isSeries && styles.castSection}>
+            <Shelf title="Cast e troupe" gap={16}>
+              {cast.map((person) => (
+                <CastMember key={person.Id} person={person} session={session} />
+              ))}
+            </Shelf>
+          </View>
         )}
 
         {infoRows.length > 0 && (
@@ -685,6 +687,9 @@ const styles = StyleSheet.create({
     fontWeight: "700",
     color: Palette.labelSecondary,
     marginTop: 4,
+  },
+  castSection: {
+    marginTop: 32,
   },
   seriesSection: {
     marginTop: 28,

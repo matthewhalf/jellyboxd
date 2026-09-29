@@ -154,7 +154,7 @@ function HeroSlide({ item, session, width, height, imageTransform }: HeroSlidePr
   const showLogo = !!logoId && !logoFailed;
 
   const meta = [
-    "Serie TV",
+    item.Type === "Movie" ? "Film" : "Serie TV",
     ...(item.Genres ?? []).slice(0, 2),
     item.ProductionYear,
   ]

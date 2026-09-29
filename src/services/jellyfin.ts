@@ -74,6 +74,10 @@ export interface JellyfinItem {
   ImageTags?: Partial<Record<"Primary" | "Logo" | "Thumb" | string, string>>;
   BackdropImageTags?: string[];
   PremiereDate?: string;
+  /** When the item was added to the library. */
+  DateCreated?: string;
+  /** Series only: when the latest episode/season was added. */
+  DateLastMediaAdded?: string;
   OfficialRating?: string;
   Genres?: string[];
   Taglines?: string[];
@@ -398,22 +402,33 @@ export class JellyfinService {
   }
 
   /**
-   * Series for the home hero carousel: the ones added most recently or that
-   * most recently received new episodes/seasons (DateLastContentAdded).
+   * Items for the home hero carousel: the latest `limit` movies and series added, mixed.
+   * Series count from their last added episode/season (DateLastContentAdded), movies from
+   * DateCreated. Runs on every home load, so new additions show up right away.
    */
   static async fetchFeatured(session: JellyfinSession, limit: number = 4): Promise<JellyfinItem[]> {
-    try {
-      const url = `${session.serverUrl}/Users/${session.userId}/Items?IncludeItemTypes=Series&Recursive=true&SortBy=DateLastContentAdded,DateCreated&SortOrder=Descending&ImageTypes=Backdrop&Limit=${limit}&Fields=${HOME_ITEM_FIELDS}`;
-      const res = await this.fetchWithTimeoutAndRetry(url, {
-        headers: this.getAuthHeaders(session.token),
-      });
-      if (!res.ok) return [];
-      const data = await res.json();
-      return data.Items || [];
-    } catch (e) {
-      console.warn("[JellyfinService] fetchFeatured error:", e);
-      return [];
-    }
+    const fetchType = async (type: "Series" | "Movie", sortBy: string): Promise<JellyfinItem[]> => {
+      try {
+        const url = `${session.serverUrl}/Users/${session.userId}/Items?IncludeItemTypes=${type}&Recursive=true&SortBy=${sortBy}&SortOrder=Descending&ImageTypes=Backdrop&Limit=${limit}&Fields=${HOME_ITEM_FIELDS},DateCreated,DateLastMediaAdded`;
+        const res = await this.fetchWithTimeoutAndRetry(url, {
+          headers: this.getAuthHeaders(session.token),
+        });
+        if (!res.ok) return [];
+        const data = await res.json();
+        return data.Items || [];
+      } catch (e) {
+        console.warn(`[JellyfinService] fetchFeatured(${type}) error:`, e);
+        return [];
+      }
+    };
+
+    const [series, movies] = await Promise.all([
+      fetchType("Series", "DateLastContentAdded,DateCreated"),
+      fetchType("Movie", "DateCreated"),
+    ]);
+    const addedAt = (item: JellyfinItem) =>
+      Date.parse(item.DateLastMediaAdded ?? item.DateCreated ?? "") || 0;
+    return [...series, ...movies].sort((a, b) => addedAt(b) - addedAt(a)).slice(0, limit);
   }
 
   /**
