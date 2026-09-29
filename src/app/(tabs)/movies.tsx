@@ -8,7 +8,7 @@ export default function MoviesScreen() {
       title="Film"
       emptyIcon="film-outline"
       emptyText="Nessun film trovato nel server"
-      fetchItems={(session) => JellyfinService.fetchMovies(session, 100)}
+      fetchPage={(session, start, limit) => JellyfinService.fetchMoviesPage(session, start, limit)}
     />
   );
 }

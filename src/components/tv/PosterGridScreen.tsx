@@ -15,17 +15,26 @@ import Reanimated, { FadeInDown } from "react-native-reanimated";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Gutter, Palette, Typography } from "../../constants/theme";
 import { useAuth } from "../../context/AuthContext";
-import { JellyfinItem, JellyfinSession } from "../../services/jellyfin";
+import { ItemsPage, JellyfinItem, JellyfinSession } from "../../services/jellyfin";
 import { GridCard } from "../GridCard";
 
 const COLUMNS = 3;
 const COLUMN_GAP = 12;
+/** Items requested per page; the grid loads the next one when the user nears the end. */
+const PAGE_SIZE = 60;
+/** Upper bound of items re-fetched when refreshing a grid the user has scrolled deep into. */
+const MAX_REFRESH = 300;
+
+function dedupe(items: JellyfinItem[]): JellyfinItem[] {
+  const seen = new Set<string>();
+  return items.filter((item) => !seen.has(item.Id) && !!seen.add(item.Id));
+}
 
 interface PosterGridScreenProps {
   title: string;
   emptyIcon: keyof typeof Ionicons.glyphMap;
   emptyText: string;
-  fetchItems: (session: JellyfinSession) => Promise<JellyfinItem[]>;
+  fetchPage: (session: JellyfinSession, startIndex: number, limit: number) => Promise<ItemsPage>;
   seriesOnly?: boolean;
 }
 
@@ -37,13 +46,18 @@ export function PosterGridScreen({
   title,
   emptyIcon,
   emptyText,
-  fetchItems,
+  fetchPage,
   seriesOnly,
 }: PosterGridScreenProps) {
   const { session } = useAuth();
   const insets = useSafeAreaInsets();
   const { width } = useWindowDimensions();
   const [items, setItems] = useState<JellyfinItem[]>([]);
+  const [hasMore, setHasMore] = useState(false);
+  const [loadingMore, setLoadingMore] = useState(false);
+  // Mirror of `items`, updated synchronously so paging logic never reads a stale list
+  const itemsRef = useRef<JellyfinItem[]>([]);
+  const loadingMoreRef = useRef(false);
   const [isLoading, setIsLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [scrollY] = useState(() => new Animated.Value(0));
@@ -57,24 +71,58 @@ export function PosterGridScreen({
   if (shownSessionKey !== sessionKey) {
     setShownSessionKey(sessionKey);
     setItems([]);
+    setHasMore(false);
+    setLoadingMore(false);
     setIsLoading(true);
+    itemsRef.current = [];
+    loadingMoreRef.current = false;
   }
   const activeSessionKey = useRef(sessionKey);
   useEffect(() => {
     activeSessionKey.current = sessionKey;
   }, [sessionKey]);
 
+  const commitItems = (next: JellyfinItem[]) => {
+    itemsRef.current = next;
+    setItems(next);
+  };
+
+  /** (Re)loads the first pages, keeping whatever the user had already scrolled through. */
   const load = async () => {
     if (!session) return;
     const requestKey = sessionKey;
     try {
-      const next = await fetchItems(session);
+      const limit = Math.min(Math.max(PAGE_SIZE, itemsRef.current.length), MAX_REFRESH);
+      const page = await fetchPage(session, 0, limit);
       // A slow response from the previous server must not overwrite the new one
-      if (activeSessionKey.current === requestKey) setItems(next);
+      if (activeSessionKey.current !== requestKey || !page.ok) return;
+      const next = dedupe([...page.items, ...itemsRef.current.slice(page.items.length)]);
+      commitItems(next);
+      setHasMore(next.length < page.total);
     } catch (e) {
       console.error(`Errore caricamento ${title}:`, e);
     } finally {
       if (activeSessionKey.current === requestKey) setIsLoading(false);
+    }
+  };
+
+  const loadMore = async () => {
+    if (!session || !hasMore || loadingMoreRef.current || isLoading) return;
+    const requestKey = sessionKey;
+    loadingMoreRef.current = true;
+    setLoadingMore(true);
+    try {
+      const page = await fetchPage(session, itemsRef.current.length, PAGE_SIZE);
+      if (activeSessionKey.current !== requestKey || !page.ok) return;
+      const next = dedupe([...itemsRef.current, ...page.items]);
+      // No new items at all means the server ran out (or the list shifted): stop asking
+      setHasMore(next.length > itemsRef.current.length && next.length < page.total);
+      commitItems(next);
+    } finally {
+      if (activeSessionKey.current === requestKey) {
+        loadingMoreRef.current = false;
+        setLoadingMore(false);
+      }
     }
   };
 
@@ -117,6 +165,11 @@ export function PosterGridScreen({
           })}
           refreshControl={
             <RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={Palette.label} />
+          }
+          onEndReached={loadMore}
+          onEndReachedThreshold={1.5}
+          ListFooterComponent={
+            loadingMore ? <ActivityIndicator style={styles.footer} color={Palette.labelSecondary} /> : null
           }
           ListHeaderComponent={<Text style={styles.largeTitle}>{title}</Text>}
           ListEmptyComponent={
@@ -168,6 +221,9 @@ const styles = StyleSheet.create({
   listContent: {
     paddingHorizontal: Gutter,
     paddingBottom: 110,
+  },
+  footer: {
+    paddingVertical: 20,
   },
   largeTitle: {
     ...Typography.largeTitle,

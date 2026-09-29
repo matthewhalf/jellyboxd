@@ -9,7 +9,7 @@ import { UserAvatar } from "../components/tv/UserAvatar";
 import { Gutter, Palette, Radius, Typography } from "../constants/theme";
 import { useAuth } from "../context/AuthContext";
 import { haptics } from "../lib/haptics";
-import { JellyfinService } from "../services/jellyfin";
+import { JellyfinService, SessionExpiredError } from "../services/jellyfin";
 
 const BITRATE_PRESETS = [
   { label: "Originale", bitrate: 0, sub: "Direct Play, massima qualità" },
@@ -29,6 +29,7 @@ export default function SettingsScreen() {
   const [serverInfoResult, setServerInfoResult] = useState<{
     serverId: string | null;
     info: { ServerName?: string; Version?: string; OperatingSystem?: string } | null;
+    status: "ok" | "unauthorized" | "unreachable";
   } | null>(null);
   const [selectedBitrate, setSelectedBitrate] = useState<number>(0);
   const [clearingCache, setClearingCache] = useState(false);
@@ -45,13 +46,15 @@ export default function SettingsScreen() {
   useEffect(() => {
     if (!session) return;
     let cancelled = false;
-    Promise.all([JellyfinService.fetchServerInfo(session), JellyfinService.getDefaultBitrate()]).then(
-      ([info, bitrate]) => {
-        if (cancelled) return;
-        setServerInfoResult({ serverId: activeServerId, info });
-        setSelectedBitrate(bitrate);
-      }
-    );
+    Promise.all([
+      JellyfinService.fetchServerInfo(session),
+      JellyfinService.checkSession(session),
+      JellyfinService.getDefaultBitrate(),
+    ]).then(([info, status, bitrate]) => {
+      if (cancelled) return;
+      setServerInfoResult({ serverId: activeServerId, info, status });
+      setSelectedBitrate(bitrate);
+    });
     return () => {
       cancelled = true;
     };
@@ -59,7 +62,14 @@ export default function SettingsScreen() {
 
   const loadingServerInfo = serverInfoResult?.serverId !== activeServerId;
   const serverInfo = loadingServerInfo ? null : serverInfoResult?.info ?? null;
-  const isReachable = loadingServerInfo ? null : !!serverInfo;
+  const connectionStatus = loadingServerInfo ? null : serverInfoResult?.status ?? "unreachable";
+  const isReachable = connectionStatus === null ? null : connectionStatus === "ok";
+  const statusLabel =
+    connectionStatus === "unauthorized"
+      ? "Sessione scaduta"
+      : connectionStatus === "ok"
+        ? "Connesso"
+        : "Non raggiungibile";
 
   const handleSelectBitrate = async (bitrate: number) => {
     haptics.selection();
@@ -116,10 +126,17 @@ export default function SettingsScreen() {
       await switchServer(server);
     } catch (err: any) {
       haptics.error();
-      Alert.alert(
-        "Server non raggiungibile",
-        err.message || `Impossibile connettersi a "${server.serverUrl}".`
-      );
+      if (err instanceof SessionExpiredError) {
+        Alert.alert("Sessione scaduta", err.message, [
+          { text: "Annulla", style: "cancel" },
+          { text: "Accedi di nuovo", onPress: () => router.push("/add-server") },
+        ]);
+      } else {
+        Alert.alert(
+          "Server non raggiungibile",
+          err.message || `Impossibile connettersi a "${server.serverUrl}".`
+        );
+      }
     } finally {
       setSwitchingId(null);
     }
@@ -200,7 +217,7 @@ export default function SettingsScreen() {
               ) : (
                 <>
                   <View style={[styles.statusDot, !isReachable && styles.statusDotOffline]} />
-                  <Text style={styles.rowValue}>{isReachable ? "Connesso" : "Non raggiungibile"}</Text>
+                  <Text style={styles.rowValue}>{statusLabel}</Text>
                 </>
               )}
             </View>

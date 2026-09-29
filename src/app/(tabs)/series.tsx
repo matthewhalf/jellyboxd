@@ -8,7 +8,7 @@ export default function SeriesScreen() {
       title="Serie TV"
       emptyIcon="tv-outline"
       emptyText="Nessuna serie trovata nel server"
-      fetchItems={(session) => JellyfinService.fetchSeries(session, 100)}
+      fetchPage={(session, start, limit) => JellyfinService.fetchSeriesPage(session, start, limit)}
       seriesOnly
     />
   );

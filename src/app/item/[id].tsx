@@ -498,7 +498,6 @@ function EpisodeCard({
   width: number;
   onRefresh: () => void;
 }) {
-  const epMins = ep.RunTimeTicks ? Math.round(ep.RunTimeTicks / TICKS_PER_MINUTE) : null;
   const left = minutesLeft(ep);
   const isPlayed = !!ep.UserData?.Played;
   const progress = ep.UserData?.PlayedPercentage || 0;
@@ -546,7 +545,6 @@ function EpisodeCard({
           {ep.Overview}
         </Text>
       ) : null}
-      {epMins && <Text style={styles.episodeDuration}>{formatMinutes(epMins)}</Text>}
     </MediaLink>
   );
 }
@@ -773,11 +771,6 @@ const styles = StyleSheet.create({
     ...Typography.footnote,
     color: Palette.labelSecondary,
     marginTop: 4,
-  },
-  episodeDuration: {
-    ...Typography.caption1,
-    color: Palette.labelTertiary,
-    marginTop: 6,
   },
   castMember: {
     width: 84,

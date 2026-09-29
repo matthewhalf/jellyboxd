@@ -96,14 +96,11 @@ export function NativePlayerProvider({ children }: { children: React.ReactNode }
       if (!item) throw new Error("Item non trovato");
 
       const streams = item.MediaSources?.[0]?.MediaStreams || [];
-      const audio =
-        streams.find((s) => s.Type === "Audio" && s.IsDefault) ||
-        streams.find((s) => s.Type === "Audio");
-      const subtitle = streams.find((s) => s.Type === "Subtitle" && s.IsDefault);
+      const defaults = JellyfinService.pickDefaultStreams(streams);
 
       const uri = JellyfinService.getStreamUrl(session.serverUrl, itemId, session.token, {
-        audioStreamIndex: audio?.Index,
-        subtitleStreamIndex: subtitle ? subtitle.Index : -1,
+        audioStreamIndex: defaults.audioStreamIndex,
+        subtitleStreamIndex: defaults.subtitleStreamIndex,
         maxStreamingBitrate: bitrate,
       });
 

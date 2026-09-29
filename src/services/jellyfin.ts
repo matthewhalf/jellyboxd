@@ -81,6 +81,13 @@ export interface JellyfinItem {
   MediaSources?: MediaSourceInfo[];
 }
 
+export interface ItemsPage {
+  items: JellyfinItem[];
+  /** Number of items matching the query on the server, across all pages. */
+  total: number;
+  ok: boolean;
+}
+
 const STORAGE_KEYS = {
   SERVER_URL: "jellyboxd_server_url",
   TOKEN: "jellyboxd_token",
@@ -90,6 +97,14 @@ const STORAGE_KEYS = {
   DEFAULT_BITRATE: "jellyboxd_default_bitrate",
   SAVED_SERVERS: "jellyboxd_saved_servers",
 };
+
+/** The stored token was rejected by the server: the user has to log in again. */
+export class SessionExpiredError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "SessionExpiredError";
+  }
+}
 
 function savedServerId(session: JellyfinSession): string {
   return `${session.serverUrl}::${session.userId}`;
@@ -248,19 +263,47 @@ export class JellyfinService {
     return next;
   }
 
+  /**
+   * Checks that the session's token is still accepted by its server. The public info endpoint
+   * answers without authentication, so it can't tell an expired/revoked token from a working one.
+   */
+  static async checkSession(
+    session: JellyfinSession,
+    timeoutMs: number = 6000
+  ): Promise<"ok" | "unauthorized" | "unreachable"> {
+    try {
+      const res = await this.fetchWithTimeoutAndRetry(
+        `${session.serverUrl}/Users/${session.userId}`,
+        { headers: this.getAuthHeaders(session.token) },
+        0,
+        timeoutMs
+      );
+      if (res.ok) return "ok";
+      if (res.status === 401 || res.status === 403 || res.status === 404) return "unauthorized";
+      return "unreachable";
+    } catch {
+      return "unreachable";
+    }
+  }
+
   /** Makes an already-saved server the active session, reusing its stored token. */
   static async switchToSavedServer(server: SavedServer): Promise<JellyfinSession> {
     await this.initDeviceId();
 
-    try {
-      await this.fetchWithTimeoutAndRetry(`${server.serverUrl}/System/Info/Public`, {}, 0, 6000);
-    } catch {
+    const { id: _id, ...session } = server;
+    const status = await this.checkSession(session);
+    if (status === "unreachable") {
       throw new Error(
         `Impossibile raggiungere il server "${server.serverUrl}". Controlla che sia online e riprova.`
       );
     }
+    if (status === "unauthorized") {
+      throw new SessionExpiredError(
+        `L'accesso di "${server.userName}" su ${server.serverUrl} è scaduto. Accedi di nuovo per caricare la libreria.`
+      );
+    }
 
-    const { id: _id, ...session } = server;
+
     await this.saveSession(session);
     return session;
   }
@@ -488,38 +531,50 @@ export class JellyfinService {
     }
   }
 
-  static async fetchLibraryItems(
+  /** One page of a paged item query; `ok` is false when the request failed (as opposed to an empty result). */
+  private static async fetchItemsPage(
     session: JellyfinSession,
-    parentId: string
-  ): Promise<JellyfinItem[]> {
+    query: string,
+    startIndex: number,
+    limit: number
+  ): Promise<ItemsPage> {
     try {
-      // Only return top-level series or movies in the library, never loose episodes or seasons
-      const url = `${session.serverUrl}/Users/${session.userId}/Items?ParentId=${parentId}&Recursive=true&IncludeItemTypes=Movie,Series&SortBy=SortName&Limit=200`;
+      const url = `${session.serverUrl}/Users/${session.userId}/Items?${query}&StartIndex=${startIndex}&Limit=${limit}&EnableTotalRecordCount=true`;
       const res = await this.fetchWithTimeoutAndRetry(url, {
         headers: this.getAuthHeaders(session.token),
       });
-      if (!res.ok) return [];
+      if (!res.ok) return { items: [], total: 0, ok: false };
       const data = await res.json();
-      return data.Items || [];
+      const items: JellyfinItem[] = data.Items || [];
+      return { items, total: data.TotalRecordCount ?? startIndex + items.length, ok: true };
     } catch (e) {
-      console.warn("[JellyfinService] fetchLibraryItems error:", e);
-      return [];
+      console.warn("[JellyfinService] fetchItemsPage error:", e);
+      return { items: [], total: 0, ok: false };
     }
   }
 
-  static async fetchSeries(session: JellyfinSession, limit: number = 25): Promise<JellyfinItem[]> {
-    try {
-      const url = `${session.serverUrl}/Users/${session.userId}/Items?IncludeItemTypes=Series&Recursive=true&SortBy=SortName&Limit=${limit}`;
-      const res = await this.fetchWithTimeoutAndRetry(url, {
-        headers: this.getAuthHeaders(session.token),
-      });
-      if (!res.ok) return [];
-      const data = await res.json();
-      return data.Items || [];
-    } catch (e) {
-      console.warn("[JellyfinService] fetchSeries error:", e);
-      return [];
-    }
+  static fetchLibraryItemsPage(
+    session: JellyfinSession,
+    parentId: string,
+    startIndex: number,
+    limit: number
+  ): Promise<ItemsPage> {
+    // Only top-level series or movies in the library, never loose episodes or seasons
+    return this.fetchItemsPage(
+      session,
+      `ParentId=${parentId}&Recursive=true&IncludeItemTypes=Movie,Series&SortBy=SortName`,
+      startIndex,
+      limit
+    );
+  }
+
+  static fetchSeriesPage(session: JellyfinSession, startIndex: number, limit: number): Promise<ItemsPage> {
+    return this.fetchItemsPage(
+      session,
+      "IncludeItemTypes=Series&Recursive=true&SortBy=SortName",
+      startIndex,
+      limit
+    );
   }
 
   static async fetchLatestSeries(session: JellyfinSession, limit: number = 20): Promise<JellyfinItem[]> {
@@ -594,9 +649,9 @@ export class JellyfinService {
     }
   }
 
-  static async fetchMovies(session: JellyfinSession, limit: number = 25): Promise<JellyfinItem[]> {
+  static async fetchLatestMovies(session: JellyfinSession, limit: number = 20): Promise<JellyfinItem[]> {
     try {
-      const url = `${session.serverUrl}/Users/${session.userId}/Items?IncludeItemTypes=Movie&Recursive=true&SortBy=SortName&Limit=${limit}`;
+      const url = `${session.serverUrl}/Users/${session.userId}/Items?IncludeItemTypes=Movie&Recursive=true&SortBy=DateCreated&SortOrder=Descending&Limit=${limit}`;
       const res = await this.fetchWithTimeoutAndRetry(url, {
         headers: this.getAuthHeaders(session.token),
       });
@@ -604,9 +659,18 @@ export class JellyfinService {
       const data = await res.json();
       return data.Items || [];
     } catch (e) {
-      console.warn("[JellyfinService] fetchMovies error:", e);
+      console.warn("[JellyfinService] fetchLatestMovies error:", e);
       return [];
     }
+  }
+
+  static fetchMoviesPage(session: JellyfinSession, startIndex: number, limit: number): Promise<ItemsPage> {
+    return this.fetchItemsPage(
+      session,
+      "IncludeItemTypes=Movie&Recursive=true&SortBy=SortName",
+      startIndex,
+      limit
+    );
   }
 
   static async fetchSeasons(session: JellyfinSession, seriesId: string): Promise<JellyfinItem[]> {
@@ -730,6 +794,17 @@ export class JellyfinService {
     try {
       await SecureStore.setItemAsync(STORAGE_KEYS.DEFAULT_BITRATE, bitrate.toString());
     } catch {}
+  }
+
+  /** Tracks to start with when none were picked: the file's default audio and default subtitle (if any). */
+  static pickDefaultStreams(streams: MediaStreamInfo[]): {
+    audioStreamIndex?: number;
+    subtitleStreamIndex: number;
+  } {
+    const audio =
+      streams.find((s) => s.Type === "Audio" && s.IsDefault) || streams.find((s) => s.Type === "Audio");
+    const subtitle = streams.find((s) => s.Type === "Subtitle" && s.IsDefault);
+    return { audioStreamIndex: audio?.Index, subtitleStreamIndex: subtitle ? subtitle.Index : -1 };
   }
 
   static async fetchServerInfo(session: JellyfinSession): Promise<{

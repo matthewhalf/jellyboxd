@@ -65,9 +65,9 @@ export function HeroCarousel({ items, session, width, height, scrollY }: HeroCar
     startAutoplay();
   };
 
-  // Pull-down stretches the artwork; scrolling up moves it slower than the page.
-  // Only scaleY grows (never scaleX/scale), so the stretch can never bleed sideways
-  // into the neighboring slide even with "overflow: visible" below.
+  // Pull-down zooms the artwork (same curve as the series detail hero); scrolling up
+  // moves it slower than the page. The zoom is centered, so the sides only grow beyond
+  // the screen edges, never into a visible neighboring slide while at rest.
   const imageTransform = [
     {
       translateY: scrollY.interpolate({
@@ -78,7 +78,7 @@ export function HeroCarousel({ items, session, width, height, scrollY }: HeroCar
       }),
     },
     {
-      scaleY: scrollY.interpolate({
+      scale: scrollY.interpolate({
         inputRange: [-height, 0],
         outputRange: [2, 1],
         extrapolateLeft: "clamp",
@@ -86,6 +86,12 @@ export function HeroCarousel({ items, session, width, height, scrollY }: HeroCar
       }),
     },
   ];
+
+  const bottomFadeOpacity = scrollY.interpolate({
+    inputRange: [0, height * 0.25],
+    outputRange: [0, 1],
+    extrapolate: "clamp",
+  });
 
   return (
     <View style={{ width, height }}>
@@ -109,6 +115,18 @@ export function HeroCarousel({ items, session, width, height, scrollY }: HeroCar
           />
         )}
       />
+
+      {/* The slides' own fade travels with the parallax image and gets clipped at the carousel's
+          bottom edge once scrolled; this one stays put, so the seam under the hero stays soft. */}
+      <Animated.View
+        pointerEvents="none"
+        style={[styles.bottomFade, { height: height * 0.32, opacity: bottomFadeOpacity }]}
+      >
+        <LinearGradient
+          colors={["transparent", Palette.background]}
+          style={StyleSheet.absoluteFill}
+        />
+      </Animated.View>
 
       {items.length > 1 && (
         <View style={styles.dots} pointerEvents="none">
@@ -194,6 +212,12 @@ function HeroSlide({ item, session, width, height, imageTransform }: HeroSlidePr
 }
 
 const styles = StyleSheet.create({
+  bottomFade: {
+    position: "absolute",
+    left: 0,
+    right: 0,
+    bottom: 0,
+  },
   topShade: {
     position: "absolute",
     top: 0,

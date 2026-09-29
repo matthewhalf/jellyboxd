@@ -5,6 +5,7 @@ import React, { useCallback, useEffect, useRef, useState } from "react";
 import {
   ActivityIndicator,
   Animated,
+  Platform,
   Pressable,
   RefreshControl,
   StyleSheet,
@@ -17,7 +18,6 @@ import { LoginScreen } from "../../components/LoginScreen";
 import { PosterCard } from "../../components/PosterCard";
 import { ContinueWatchingCard } from "../../components/tv/ContinueWatchingCard";
 import { HeroCarousel } from "../../components/tv/HeroCarousel";
-import { LandscapeCard } from "../../components/tv/LandscapeCard";
 import { Shelf } from "../../components/tv/Shelf";
 import { UserAvatar } from "../../components/tv/UserAvatar";
 import { Gutter, Palette, Radius, Typography } from "../../constants/theme";
@@ -27,7 +27,6 @@ import { haptics } from "../../lib/haptics";
 import { JellyfinItem, JellyfinService } from "../../services/jellyfin";
 
 const CONTINUE_GAP = 12;
-const LANDSCAPE_GAP = 12;
 
 export default function HomeScreen() {
   const { session, isLoading } = useAuth();
@@ -47,7 +46,6 @@ export default function HomeScreen() {
 
   const heroHeight = Math.round(Math.min(height * 0.58, width * 1.25));
   const continueWidth = Math.min(width * 0.72, 320);
-  const landscapeWidth = Math.min(width * 0.62, 280);
   const headerHeight = insets.top + 52;
 
   // Switching server: drop the previous server's shelves right away and show the spinner
@@ -75,7 +73,7 @@ export default function HomeScreen() {
         JellyfinService.fetchFeatured(session, 4),
         JellyfinService.fetchContinueWatching(session),
         JellyfinService.fetchLatestSeries(session, 20),
-        JellyfinService.fetchMovies(session, 20),
+        JellyfinService.fetchLatestMovies(session, 20),
       ]);
       // A slow response from the previous server must not overwrite the new one
       if (activeSessionKey.current !== requestKey) return;
@@ -161,7 +159,9 @@ export default function HomeScreen() {
           <RefreshControl
             refreshing={refreshing}
             onRefresh={onRefresh}
-            tintColor={Palette.label}
+            // iOS draws the native spinner behind the zoomed hero, so an overlay spinner replaces it
+            tintColor="transparent"
+            colors={[Palette.label]}
             progressViewOffset={headerHeight}
           />
         }
@@ -200,18 +200,14 @@ export default function HomeScreen() {
         )}
 
         {latestSeries.length > 0 && (
-          <Shelf
-            title="Serie aggiunte di recente"
-            onSeeAll={() => router.navigate("/series")}
-            gap={LANDSCAPE_GAP}
-            snapInterval={landscapeWidth + LANDSCAPE_GAP}
-          >
+          <Shelf title="Serie recenti" onSeeAll={() => router.navigate("/series")}>
             {latestSeries.map((series) => (
-              <LandscapeCard
+              <PosterCard
                 key={series.Id}
                 item={series}
                 session={session}
-                width={landscapeWidth}
+                width={124}
+                height={186}
                 onRefresh={loadData}
                 seriesOnly
               />
@@ -220,7 +216,7 @@ export default function HomeScreen() {
         )}
 
         {moviesList.length > 0 && (
-          <Shelf title="Film" onSeeAll={() => router.navigate("/movies")}>
+          <Shelf title="Film recenti" onSeeAll={() => router.navigate("/movies")}>
             {moviesList.map((movie) => (
               <PosterCard
                 key={movie.Id}
@@ -259,6 +255,12 @@ export default function HomeScreen() {
           </View>
         )}
       </Animated.ScrollView>
+
+      {refreshing && Platform.OS === "ios" && (
+        <View style={[styles.refreshIndicator, { top: headerHeight + 8 }]} pointerEvents="none">
+          <ActivityIndicator color={Palette.label} />
+        </View>
+      )}
 
       {/* Floating header: wordmark + Jellyfin profile picture */}
       <View style={[styles.header, { height: headerHeight, paddingTop: insets.top }]}>
@@ -300,6 +302,12 @@ const styles = StyleSheet.create({
   },
   scrollContent: {
     paddingBottom: 110,
+  },
+  refreshIndicator: {
+    position: "absolute",
+    left: 0,
+    right: 0,
+    alignItems: "center",
   },
   heroSpacer: {
     height: 24,

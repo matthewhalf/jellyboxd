@@ -1,10 +1,13 @@
 import { Link, useRouter } from "expo-router";
-import React from "react";
+import React, { useEffect, useRef } from "react";
 import { Alert, Animated, Platform, Pressable, StyleProp, View, ViewStyle } from "react-native";
 import { useNativePlayer } from "../context/NativePlayerContext";
 import { usePressScale } from "../hooks/use-press-scale";
 import { haptics } from "../lib/haptics";
 import { JellyfinItem, JellyfinService, JellyfinSession } from "../services/jellyfin";
+
+/** How long a finger must rest on a card before it shrinks (the start of a long press). */
+const LONG_PRESS_SHRINK_DELAY_MS = 250;
 
 interface MediaLinkProps {
   item: JellyfinItem;
@@ -77,7 +80,7 @@ function useMediaActions(item: JellyfinItem, session: JellyfinSession | null, on
  * Tappable media card:
  * - tap opens the detail page (iOS 18+: native zoom transition from the artwork) or plays
  * - long press opens the native context menu (iOS) or an action list (Android)
- * - springs down while pressed, snaps back instantly on tap
+ * - springs down only while held (long press), never on a plain tap or a scroll gesture
  */
 export function MediaLink({
   item,
@@ -93,7 +96,30 @@ export function MediaLink({
 }: MediaLinkProps) {
   const router = useRouter();
   const { play } = useNativePlayer();
-  const { scale, onPressIn, onPressOut, reset } = usePressScale(pressedScale);
+  const { scale, onPressIn: shrink, onPressOut: release, reset } = usePressScale(pressedScale);
+  // The card only shrinks once the finger has rested on it: a tap or the start of a scroll
+  // gesture (which cancels the press) never triggers the effect, only a long press does
+  const holdTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const shrunk = useRef(false);
+  const clearHold = () => {
+    if (holdTimer.current) clearTimeout(holdTimer.current);
+    holdTimer.current = null;
+  };
+  const onPressIn = () => {
+    clearHold();
+    holdTimer.current = setTimeout(() => {
+      holdTimer.current = null;
+      shrunk.current = true;
+      shrink();
+    }, LONG_PRESS_SHRINK_DELAY_MS);
+  };
+  const onPressOut = () => {
+    clearHold();
+    if (!shrunk.current) return;
+    shrunk.current = false;
+    release();
+  };
+  useEffect(() => clearHold, []);
   const actions = useMediaActions(item, session, onRefresh, seriesOnly);
   const href = `/item/${item.Id}` as const;
 
