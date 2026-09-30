@@ -100,6 +100,8 @@ const STORAGE_KEYS = {
   DEVICE_ID: "jellyboxd_device_id",
   DEFAULT_BITRATE: "jellyboxd_default_bitrate",
   SAVED_SERVERS: "jellyboxd_saved_servers",
+  /** One key per saved server: the saved-servers blob would otherwise outgrow SecureStore's value size limit. */
+  PASSWORD_PREFIX: "jellyboxd_pw_",
 };
 
 /** The stored token was rejected by the server: the user has to log in again. */
@@ -110,8 +112,22 @@ export class SessionExpiredError extends Error {
   }
 }
 
+/** The server rejected the username/password. */
+export class InvalidCredentialsError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "InvalidCredentialsError";
+  }
+}
+
 function savedServerId(session: JellyfinSession): string {
   return `${session.serverUrl}::${session.userId}`;
+}
+
+/** SecureStore keys only allow [A-Za-z0-9._-], so every other character of the server id is hex-escaped. */
+function passwordKey(id: string): string {
+  const safe = id.replace(/[^A-Za-z0-9.\-]/g, (c) => `_${c.charCodeAt(0).toString(16)}_`);
+  return `${STORAGE_KEYS.PASSWORD_PREFIX}${safe}`;
 }
 
 export type JellyfinImageType = "Primary" | "Backdrop" | "Thumb" | "Logo";
@@ -120,26 +136,45 @@ const HOME_ITEM_FIELDS =
   "Overview,RunTimeTicks,UserData,ParentBackdropItemId,SeriesId,SeriesName,Genres,OfficialRating,ProductionYear,CommunityRating";
 
 export class JellyfinService {
-  private static deviceId = "jellyboxd-" + (Platform.OS === "ios" ? "ios" : "android");
+  /** Identifies this installation; the DeviceId actually sent is derived from it per server address. */
+  private static installDeviceId = "jellyboxd-" + (Platform.OS === "ios" ? "ios" : "android");
+  /** DeviceId sent with requests: see `useServer`. */
+  private static deviceId = this.installDeviceId;
   private static deviceIdInitialized = false;
 
   static async initDeviceId(): Promise<string> {
-    if (this.deviceIdInitialized) return this.deviceId;
+    if (this.deviceIdInitialized) return this.installDeviceId;
     try {
       const stored = await SecureStore.getItemAsync(STORAGE_KEYS.DEVICE_ID);
       if (stored) {
-        this.deviceId = stored;
+        this.installDeviceId = stored;
         this.deviceIdInitialized = true;
         return stored;
       }
       const newId = `jellyboxd-${Platform.OS === "ios" ? "ios" : "android"}-${Math.random().toString(36).substring(2, 10)}`;
       await SecureStore.setItemAsync(STORAGE_KEYS.DEVICE_ID, newId);
-      this.deviceId = newId;
+      this.installDeviceId = newId;
       this.deviceIdInitialized = true;
       return newId;
     } catch {
-      return this.deviceId;
+      return this.installDeviceId;
     }
+  }
+
+  /**
+   * Picks the DeviceId to send for the server at `serverUrl`.
+   * Jellyfin logs out a user's existing sessions on a device whenever that user logs in again on the same
+   * DeviceId, so a single DeviceId for every saved login makes the same server saved under two addresses
+   * (e.g. LAN and Tailscale) revoke each other's token. One DeviceId per address avoids that.
+   * Requests are authenticated by token alone, so this is harmless for tokens issued before this change.
+   */
+  private static useServer(serverUrl: string): void {
+    const normalized = serverUrl.trim().replace(/\/+$/, "").toLowerCase();
+    let hash = 5381;
+    for (let i = 0; i < normalized.length; i++) {
+      hash = ((hash * 33) ^ normalized.charCodeAt(i)) >>> 0;
+    }
+    this.deviceId = `${this.installDeviceId}-${hash.toString(36)}`;
   }
 
   static async fetchWithTimeoutAndRetry(
@@ -208,6 +243,7 @@ export class JellyfinService {
       ]);
 
       if (serverUrl && token && userId) {
+        this.useServer(serverUrl);
         return {
           serverUrl,
           token,
@@ -263,7 +299,10 @@ export class JellyfinService {
   static async removeSavedServer(id: string): Promise<SavedServer[]> {
     const existing = await this.getSavedServers();
     const next = existing.filter((s) => s.id !== id);
-    await SecureStore.setItemAsync(STORAGE_KEYS.SAVED_SERVERS, JSON.stringify(next));
+    await Promise.all([
+      SecureStore.setItemAsync(STORAGE_KEYS.SAVED_SERVERS, JSON.stringify(next)),
+      SecureStore.deleteItemAsync(passwordKey(id)).catch(() => {}),
+    ]);
     return next;
   }
 
@@ -294,7 +333,8 @@ export class JellyfinService {
   static async switchToSavedServer(server: SavedServer): Promise<JellyfinSession> {
     await this.initDeviceId();
 
-    const { id: _id, ...session } = server;
+    const { id, ...stored } = server;
+    let session: JellyfinSession = stored;
     const status = await this.checkSession(session);
     if (status === "unreachable") {
       throw new Error(
@@ -302,14 +342,48 @@ export class JellyfinService {
       );
     }
     if (status === "unauthorized") {
-      throw new SessionExpiredError(
-        `L'accesso di "${server.userName}" su ${server.serverUrl} è scaduto. Accedi di nuovo per caricare la libreria.`
-      );
+      // Servers behind a reverse proxy revoke tokens whenever the client's IP changes (e.g. Wi-Fi <-> mobile),
+      // so try to get a fresh token with the remembered password before bothering the user.
+      const renewed = await this.renewSession(id, session);
+      if (!renewed) {
+        throw new SessionExpiredError(
+          `L'accesso di "${server.userName}" su ${server.serverUrl} è scaduto. Accedi di nuovo per caricare la libreria.`
+        );
+      }
+      session = renewed;
     }
 
-
+    this.useServer(session.serverUrl);
     await this.saveSession(session);
     return session;
+  }
+
+  /**
+   * Logs in again with the password remembered for this saved server.
+   * Returns null when there's nothing to retry with, or the password is no longer valid;
+   * network failures propagate so the caller reports the server as unreachable.
+   */
+  private static async renewSession(
+    id: string,
+    session: JellyfinSession
+  ): Promise<JellyfinSession | null> {
+    const password = await SecureStore.getItemAsync(passwordKey(id)).catch(() => null);
+    if (!password) return null;
+
+    this.useServer(session.serverUrl);
+    try {
+      const renewed = await this.authenticate(session.serverUrl, session.userName, password);
+      // Same server URL, but a different account behind those credentials: not the login the user saved.
+      if (renewed.userId !== session.userId) return null;
+      return renewed;
+    } catch (err) {
+      if (err instanceof InvalidCredentialsError) {
+        // Password changed on the server: forget it so we stop retrying a dead credential.
+        await SecureStore.deleteItemAsync(passwordKey(id)).catch(() => {});
+        return null;
+      }
+      throw err;
+    }
   }
 
   static async login(
@@ -327,6 +401,7 @@ export class JellyfinService {
 
     console.log(`[JellyfinService] Connessione a: ${cleanUrl}`);
     await this.initDeviceId();
+    this.useServer(cleanUrl);
 
     // Verifica preliminare raggiungibilità server (System/Info/Public)
     try {
@@ -343,8 +418,25 @@ export class JellyfinService {
       );
     }
 
-    const endpoint = `${cleanUrl}/Users/AuthenticateByName`;
-    const res = await fetch(endpoint, {
+    const session = await this.authenticate(cleanUrl, username, password);
+
+    console.log(`[JellyfinService] Login completato per ${session.userName} (${session.userId})`);
+    await Promise.all([
+      this.saveSession(session),
+      this.upsertSavedServer(session),
+      // Remembered so an expired token can be renewed silently when switching back to this server
+      SecureStore.setItemAsync(passwordKey(savedServerId(session)), password).catch(() => {}),
+    ]);
+    return session;
+  }
+
+  /** Exchanges username/password for a fresh access token. Doesn't persist anything. */
+  private static async authenticate(
+    serverUrl: string,
+    username: string,
+    password: string
+  ): Promise<JellyfinSession> {
+    const res = await fetch(`${serverUrl}/Users/AuthenticateByName`, {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
@@ -358,7 +450,7 @@ export class JellyfinService {
 
     if (!res.ok) {
       if (res.status === 401) {
-        throw new Error("Credenziali non corrette (username o password errati).");
+        throw new InvalidCredentialsError("Credenziali non corrette (username o password errati).");
       }
       const errText = await res.text().catch(() => "");
       console.error(`[JellyfinService] Errore login ${res.status}: ${errText}`);
@@ -366,17 +458,13 @@ export class JellyfinService {
     }
 
     const data = await res.json();
-    const session: JellyfinSession = {
-      serverUrl: cleanUrl,
+    return {
+      serverUrl,
       token: data.AccessToken,
       userId: data.User.Id,
       userName: data.User.Name,
       serverId: data.ServerId,
     };
-
-    console.log(`[JellyfinService] Login completato per ${session.userName} (${session.userId})`);
-    await Promise.all([this.saveSession(session), this.upsertSavedServer(session)]);
-    return session;
   }
 
   static getImageUrl(
