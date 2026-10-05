@@ -1,5 +1,6 @@
 import * as SecureStore from "expo-secure-store";
 import { Platform } from "react-native";
+import { normalizeServerUrl } from "./server-url";
 
 export interface JellyfinSession {
   serverUrl: string;
@@ -391,13 +392,7 @@ export class JellyfinService {
     username: string,
     password: string
   ): Promise<JellyfinSession> {
-    let cleanUrl = rawServerUrl.trim();
-    if (!cleanUrl.startsWith("http://") && !cleanUrl.startsWith("https://")) {
-      cleanUrl = `http://${cleanUrl}`;
-    }
-    if (cleanUrl.endsWith("/")) {
-      cleanUrl = cleanUrl.slice(0, -1);
-    }
+    const cleanUrl = normalizeServerUrl(rawServerUrl);
 
     console.log(`[JellyfinService] Connessione a: ${cleanUrl}`);
     await this.initDeviceId();
