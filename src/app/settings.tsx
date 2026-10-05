@@ -8,20 +8,25 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { UserAvatar } from "../components/tv/UserAvatar";
 import { Gutter, Palette, Radius, Typography } from "../constants/theme";
 import { useAuth } from "../context/AuthContext";
+import { useTranslation, type LanguagePreference, type TranslationKey } from "../i18n";
 import { haptics } from "../lib/haptics";
 import { isDemoServerUrl } from "../services/demo/auth";
 import { DEMO_ATTRIBUTION } from "../services/demo/attribution";
 import { JellyfinService, SessionExpiredError } from "../services/jellyfin";
 
-const BITRATE_PRESETS = [
-  { label: "Originale", bitrate: 0, sub: "Direct Play, massima qualità" },
-  { label: "1080p · 10 Mbps", bitrate: 10000000, sub: "Alta definizione ottimizzata" },
-  { label: "720p · 4 Mbps", bitrate: 4000000, sub: "Ideale su rete mobile" },
-  { label: "480p · 1,5 Mbps", bitrate: 1500000, sub: "Basso consumo dati" },
+// Labels are translation keys, resolved at render time so they follow the selected language
+const BITRATE_PRESETS: { bitrate: number; label: TranslationKey; sub: TranslationKey }[] = [
+  { bitrate: 0, label: "settings.bitrate.original.label", sub: "settings.bitrate.original.sub" },
+  { bitrate: 10000000, label: "settings.bitrate.hd1080.label", sub: "settings.bitrate.hd1080.sub" },
+  { bitrate: 4000000, label: "settings.bitrate.hd720.label", sub: "settings.bitrate.hd720.sub" },
+  { bitrate: 1500000, label: "settings.bitrate.sd480.label", sub: "settings.bitrate.sd480.sub" },
 ];
+
+const LANGUAGE_OPTIONS: LanguagePreference[] = ["system", "en", "it"];
 
 export default function SettingsScreen() {
   const { session, savedServers, switchServer, forgetServer, logout } = useAuth();
+  const { t, preference, deviceLanguage, setPreference } = useTranslation();
   const router = useRouter();
   const insets = useSafeAreaInsets();
   const [switchingId, setSwitchingId] = useState<string | null>(null);
@@ -69,10 +74,10 @@ export default function SettingsScreen() {
   const isReachable = connectionStatus === null ? null : connectionStatus === "ok";
   const statusLabel =
     connectionStatus === "unauthorized"
-      ? "Sessione scaduta"
+      ? t("settings.status.sessionExpired")
       : connectionStatus === "ok"
-        ? "Connesso"
-        : "Non raggiungibile";
+        ? t("settings.status.connected")
+        : t("settings.status.unreachable");
 
   const handleSelectBitrate = async (bitrate: number) => {
     haptics.selection();
@@ -92,17 +97,12 @@ export default function SettingsScreen() {
     setRefreshingLibrary(false);
     if (result === "ok") {
       haptics.success();
-      Alert.alert(
-        "Aggiornamento avviato",
-        "Il server sta scansionando le librerie e scaricando le immagini mancanti. Nuovi contenuti e immagini compariranno tra qualche minuto."
-      );
+      Alert.alert(t("settings.refresh.startedTitle"), t("settings.refresh.startedMessage"));
     } else {
       haptics.error();
       Alert.alert(
-        "Aggiornamento non riuscito",
-        result === "forbidden"
-          ? "Solo un account amministratore può aggiornare le librerie del server."
-          : "Impossibile contattare il server. Riprova più tardi."
+        t("settings.refresh.failedTitle"),
+        result === "forbidden" ? t("settings.refresh.forbidden") : t("settings.refresh.unreachable")
       );
     }
   };
@@ -113,9 +113,9 @@ export default function SettingsScreen() {
     try {
       await Promise.all([Image.clearDiskCache(), Image.clearMemoryCache()]);
       haptics.success();
-      Alert.alert("Cache svuotata", "La cache locale delle immagini è stata cancellata.");
+      Alert.alert(t("settings.cache.clearedTitle"), t("settings.cache.clearedMessage"));
     } catch {
-      Alert.alert("Errore", "Impossibile cancellare la cache delle immagini.");
+      Alert.alert(t("common.error"), t("settings.cache.failedMessage"));
     } finally {
       setClearingCache(false);
     }
@@ -130,14 +130,14 @@ export default function SettingsScreen() {
     } catch (err: any) {
       haptics.error();
       if (err instanceof SessionExpiredError) {
-        Alert.alert("Sessione scaduta", err.message, [
-          { text: "Annulla", style: "cancel" },
-          { text: "Accedi di nuovo", onPress: () => router.push("/add-server") },
+        Alert.alert(t("settings.status.sessionExpired"), err.message, [
+          { text: t("common.cancel"), style: "cancel" },
+          { text: t("settings.switchServer.signInAgain"), onPress: () => router.push("/add-server") },
         ]);
       } else {
         Alert.alert(
-          "Server non raggiungibile",
-          err.message || `Impossibile connettersi a "${server.serverUrl}".`
+          t("settings.switchServer.unreachableTitle"),
+          err.message || t("settings.switchServer.unreachableMessage", { serverUrl: server.serverUrl })
         );
       }
     } finally {
@@ -147,25 +147,29 @@ export default function SettingsScreen() {
 
   const handleForgetServer = (server: (typeof savedServers)[number]) => {
     haptics.medium();
-    Alert.alert("Rimuovi server", `Dimenticare l'accesso a "${server.userName}" su ${server.serverUrl}?`, [
-      { text: "Annulla", style: "cancel" },
-      {
-        text: "Rimuovi",
-        style: "destructive",
-        onPress: () => {
-          forgetServer(server.id);
-          if (server.id === activeServerId) router.replace("/");
+    Alert.alert(
+      t("settings.forget.title"),
+      t("settings.forget.message", { userName: server.userName, serverUrl: server.serverUrl }),
+      [
+        { text: t("common.cancel"), style: "cancel" },
+        {
+          text: t("settings.forget.confirm"),
+          style: "destructive",
+          onPress: () => {
+            forgetServer(server.id);
+            if (server.id === activeServerId) router.replace("/");
+          },
         },
-      },
-    ]);
+      ]
+    );
   };
 
   const handleLogout = () => {
     haptics.medium();
-    Alert.alert("Disconnessione", `Vuoi disconnetterti dall'account ${session?.userName}?`, [
-      { text: "Annulla", style: "cancel" },
+    Alert.alert(t("settings.logout.title"), t("settings.logout.message", { userName: session?.userName ?? "" }), [
+      { text: t("common.cancel"), style: "cancel" },
       {
-        text: "Disconnetti",
+        text: t("settings.logout.confirm"),
         style: "destructive",
         onPress: () => {
           haptics.warning();
@@ -186,7 +190,7 @@ export default function SettingsScreen() {
           useNativeDriver: true,
         })}
       >
-        <Text style={styles.largeTitle}>Impostazioni</Text>
+        <Text style={styles.largeTitle}>{t("settings.title")}</Text>
 
         {session && (
           <View style={styles.profileCard}>
@@ -202,18 +206,18 @@ export default function SettingsScreen() {
           </View>
         )}
 
-        <Section title="Server">
+        <Section title={t("settings.server.title")}>
           <InfoRow
-            label="Nome"
+            label={t("settings.server.name")}
             value={loadingServerInfo ? null : serverInfo?.ServerName || "Jellyfin"}
           />
           <InfoRow
-            label="Versione Jellyfin"
+            label={t("settings.server.version")}
             value={loadingServerInfo ? null : serverInfo?.Version || "—"}
           />
-          {!isDemo && <InfoRow label="Indirizzo" value={session?.serverUrl || "—"} />}
+          {!isDemo && <InfoRow label={t("settings.server.address")} value={session?.serverUrl || "—"} />}
           <View style={styles.row}>
-            <Text style={styles.rowLabel}>Stato</Text>
+            <Text style={styles.rowLabel}>{t("settings.server.status")}</Text>
             <View style={styles.status}>
               {isReachable === null ? (
                 <ActivityIndicator size="small" color={Palette.labelSecondary} />
@@ -231,7 +235,7 @@ export default function SettingsScreen() {
               onPress={handleRefreshLibrary}
               disabled={refreshingLibrary}
             >
-              <Text style={styles.rowLabel}>Aggiorna libreria</Text>
+              <Text style={styles.rowLabel}>{t("settings.server.refreshLibrary")}</Text>
               {refreshingLibrary ? (
                 <ActivityIndicator size="small" color={Palette.labelSecondary} />
               ) : (
@@ -242,13 +246,13 @@ export default function SettingsScreen() {
         </Section>
 
         {isDemo && (
-          <Section title="Demo mode" footer={DEMO_ATTRIBUTION}>
-            <InfoRow label="Content" value="Blender open source films" />
+          <Section title={t("settings.demo.title")} footer={DEMO_ATTRIBUTION}>
+            <InfoRow label={t("settings.demo.content")} value={t("settings.demo.contentValue")} />
           </Section>
         )}
 
         {!isDemo && (
-          <Section title="I tuoi server" footer="Tocca un server per passare a quell'account.">
+          <Section title={t("settings.servers.title")} footer={t("settings.servers.footer")}>
             {savedServers.map((server) => {
               const isActive = server.id === activeServerId;
               return (
@@ -284,15 +288,15 @@ export default function SettingsScreen() {
                 router.push("/add-server");
               }}
             >
-              <Text style={styles.rowLabel}>Aggiungi un altro server</Text>
+              <Text style={styles.rowLabel}>{t("settings.servers.add")}</Text>
               <Ionicons name="add-circle-outline" size={20} color={Palette.label} />
             </Pressable>
           </Section>
         )}
 
         <Section
-          title="Qualità di streaming"
-          footer="Usata dal player all'avvio di ogni film o episodio."
+          title={t("settings.streaming.title")}
+          footer={t("settings.streaming.footer")}
         >
           {BITRATE_PRESETS.map((preset) => {
             const isSelected = selectedBitrate === preset.bitrate;
@@ -303,8 +307,8 @@ export default function SettingsScreen() {
                 onPress={() => handleSelectBitrate(preset.bitrate)}
               >
                 <View style={styles.rowTextCol}>
-                  <Text style={styles.rowLabel}>{preset.label}</Text>
-                  <Text style={styles.rowSub}>{preset.sub}</Text>
+                  <Text style={styles.rowLabel}>{t(preset.label)}</Text>
+                  <Text style={styles.rowSub}>{t(preset.sub)}</Text>
                 </View>
                 {isSelected && <Ionicons name="checkmark" size={20} color={Palette.label} />}
               </Pressable>
@@ -312,18 +316,49 @@ export default function SettingsScreen() {
           })}
         </Section>
 
-        <Section title="Account">
-          <InfoRow label="Nome utente" value={session?.userName || "—"} />
-          <InfoRow label="ID utente" value={session?.userId || "—"} small />
+        <Section title={t("settings.language.title")} footer={t("settings.language.footer")}>
+          {LANGUAGE_OPTIONS.map((option) => (
+            <Pressable
+              key={option}
+              style={({ pressed }) => [styles.row, pressed && styles.rowPressed]}
+              onPress={() => {
+                haptics.selection();
+                setPreference(option);
+              }}
+            >
+              <View style={styles.rowTextCol}>
+                <Text style={styles.rowLabel}>
+                  {option === "system"
+                    ? t("settings.language.automatic")
+                    : t(option === "en" ? "settings.language.english" : "settings.language.italian")}
+                </Text>
+                {option === "system" && (
+                  <Text style={styles.rowSub}>
+                    {t("settings.language.automaticDetail", {
+                      language: t(
+                        deviceLanguage === "it" ? "settings.language.italian" : "settings.language.english"
+                      ),
+                    })}
+                  </Text>
+                )}
+              </View>
+              {preference === option && <Ionicons name="checkmark" size={20} color={Palette.label} />}
+            </Pressable>
+          ))}
         </Section>
 
-        <Section title="Archiviazione">
+        <Section title={t("settings.account.title")}>
+          <InfoRow label={t("settings.account.userName")} value={session?.userName || "—"} />
+          <InfoRow label={t("settings.account.userId")} value={session?.userId || "—"} small />
+        </Section>
+
+        <Section title={t("settings.storage.title")}>
           <Pressable
             style={({ pressed }) => [styles.row, pressed && styles.rowPressed]}
             onPress={handleClearCache}
             disabled={clearingCache}
           >
-            <Text style={styles.rowLabel}>Svuota cache immagini</Text>
+            <Text style={styles.rowLabel}>{t("settings.storage.clearCache")}</Text>
             {clearingCache && <ActivityIndicator size="small" color={Palette.labelSecondary} />}
           </Pressable>
         </Section>
@@ -333,7 +368,7 @@ export default function SettingsScreen() {
             style={({ pressed }) => [styles.row, styles.centerRow, pressed && styles.rowPressed]}
             onPress={handleLogout}
           >
-            <Text style={styles.destructive}>Disconnetti</Text>
+            <Text style={styles.destructive}>{t("settings.logout.confirm")}</Text>
           </Pressable>
         </Section>
       </Animated.ScrollView>
@@ -351,7 +386,7 @@ export default function SettingsScreen() {
           style={[styles.compactTitle, { top: insets.top, opacity: barOpacity }]}
           pointerEvents="none"
         >
-          Impostazioni
+          {t("settings.title")}
         </Animated.Text>
         <Pressable
           onPress={() => {
@@ -361,7 +396,7 @@ export default function SettingsScreen() {
           hitSlop={10}
           style={styles.backButton}
           accessibilityRole="button"
-          accessibilityLabel="Indietro"
+          accessibilityLabel={t("common.back")}
         >
           <Ionicons name="chevron-back" size={22} color={Palette.label} />
         </Pressable>

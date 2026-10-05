@@ -1,10 +1,12 @@
 import { findItalian } from "../testing/findItalian";
 
-// Minimal local typings: the project tsconfig deliberately has no Node types
+// Minimal local typings: the project tsconfig deliberately has no Node types, so no `import`
+// eslint-disable-next-line @typescript-eslint/no-require-imports
 const fs = require("fs") as {
   readdirSync(dir: string, options: { withFileTypes: true }): { name: string; isDirectory(): boolean }[];
   readFileSync(file: string, encoding: "utf8"): string;
 };
+// eslint-disable-next-line @typescript-eslint/no-require-imports
 const path = require("path") as {
   join(...parts: string[]): string;
   relative(from: string, to: string): string;
@@ -18,7 +20,6 @@ const SRC = path.resolve(process.cwd(), "src");
 const ITALIAN_PENDING: string[] = [
   "app/add-server.tsx",
   "app/item/[id].tsx",
-  "app/settings.tsx",
   "app/(tabs)/index.tsx",
   "app/(tabs)/movies.tsx",
   "app/(tabs)/search/index.tsx",
