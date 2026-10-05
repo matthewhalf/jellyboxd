@@ -1,5 +1,9 @@
 import * as SecureStore from "expo-secure-store";
 import { Platform } from "react-native";
+import { createDemoSession, isDemoCredentials, isDemoServerUrl } from "./demo/auth";
+import { demoBackend } from "./demo/backend";
+import { DEMO_STREAMS } from "./demo/fixtures";
+import { demoImageUrl } from "./demo/images";
 import { normalizeServerUrl } from "./server-url";
 
 export interface JellyfinSession {
@@ -315,6 +319,7 @@ export class JellyfinService {
     session: JellyfinSession,
     timeoutMs: number = 6000
   ): Promise<"ok" | "unauthorized" | "unreachable"> {
+    if (isDemoServerUrl(session.serverUrl)) return "ok";
     try {
       const res = await this.fetchWithTimeoutAndRetry(
         `${session.serverUrl}/Users/${session.userId}`,
@@ -392,6 +397,11 @@ export class JellyfinService {
     username: string,
     password: string
   ): Promise<JellyfinSession> {
+    // Review credentials documented in docs/store/review-notes.md: an in-memory session, nothing persisted
+    if (isDemoCredentials(rawServerUrl, username, password)) {
+      demoBackend.resetState();
+      return createDemoSession();
+    }
     const cleanUrl = normalizeServerUrl(rawServerUrl);
 
     console.log(`[JellyfinService] Connessione a: ${cleanUrl}`);
@@ -468,12 +478,14 @@ export class JellyfinService {
     type: JellyfinImageType = "Primary",
     maxWidth: number = 600
   ): string {
+    if (isDemoServerUrl(serverUrl)) return demoImageUrl(itemId, type);
     // Logos carry transparency, so request PNG instead of a lossy re-encode
     const format = type === "Logo" ? "&format=png" : "&quality=85";
     return `${serverUrl}/Items/${itemId}/Images/${type}?maxWidth=${maxWidth}${format}`;
   }
 
   static getUserImageUrl(session: JellyfinSession, maxWidth: number = 120): string {
+    if (isDemoServerUrl(session.serverUrl)) return demoImageUrl(session.userId, "Primary");
     return `${session.serverUrl}/Users/${session.userId}/Images/Primary?maxWidth=${maxWidth}&quality=90`;
   }
 
@@ -490,6 +502,7 @@ export class JellyfinService {
    * DateCreated. Runs on every home load, so new additions show up right away.
    */
   static async fetchFeatured(session: JellyfinSession, limit: number = 4): Promise<JellyfinItem[]> {
+    if (isDemoServerUrl(session.serverUrl)) return demoBackend.featured(limit);
     const fetchType = async (type: "Series" | "Movie", sortBy: string): Promise<JellyfinItem[]> => {
       try {
         const url = `${session.serverUrl}/Users/${session.userId}/Items?IncludeItemTypes=${type}&Recursive=true&SortBy=${sortBy}&SortOrder=Descending&ImageTypes=Backdrop&Limit=${limit}&Fields=${HOME_ITEM_FIELDS},DateCreated,DateLastMediaAdded`;
@@ -519,6 +532,7 @@ export class JellyfinService {
    * Keyed by SeriesId for episodes and by item Id for movies.
    */
   static async fetchLastPlayedDates(session: JellyfinSession): Promise<Map<string, number>> {
+    if (isDemoServerUrl(session.serverUrl)) return demoBackend.lastPlayedDates();
     const dates = new Map<string, number>();
     try {
       const url = `${session.serverUrl}/Users/${session.userId}/Items?IncludeItemTypes=Episode,Movie&Recursive=true&Filters=IsPlayed&SortBy=DatePlayed&SortOrder=Descending&Limit=100&Fields=SeriesId`;
@@ -543,6 +557,7 @@ export class JellyfinService {
    * series, one card per series, ordered so the most recently watched series comes first.
    */
   static async fetchContinueWatching(session: JellyfinSession): Promise<JellyfinItem[]> {
+    if (isDemoServerUrl(session.serverUrl)) return demoBackend.continueWatching();
     const [resume, nextUp, lastPlayed] = await Promise.all([
       this.fetchResumeItems(session),
       this.fetchNextUp(session, 20),
@@ -577,6 +592,7 @@ export class JellyfinService {
       maxStreamingBitrate?: number;
     }
   ): string {
+    if (isDemoServerUrl(serverUrl)) return DEMO_STREAMS[itemId] ?? DEMO_STREAMS["demo-movie-bbb"];
     let url = `${serverUrl}/Videos/${itemId}/master.m3u8?MediaSourceId=${itemId}&ApiKey=${token}&api_key=${token}`;
     if (options?.audioStreamIndex !== undefined) {
       url += `&AudioStreamIndex=${options.audioStreamIndex}`;
@@ -591,6 +607,7 @@ export class JellyfinService {
   }
 
   static async fetchResumeItems(session: JellyfinSession): Promise<JellyfinItem[]> {
+    if (isDemoServerUrl(session.serverUrl)) return demoBackend.resumeItems();
     try {
       const url = `${session.serverUrl}/Users/${session.userId}/Items/Resume?Limit=15&Fields=Overview,RunTimeTicks,UserData,ParentBackdropItemId,SeriesId,SeriesName`;
       const res = await this.fetchWithTimeoutAndRetry(url, {
@@ -615,6 +632,7 @@ export class JellyfinService {
   }
 
   static async fetchLibraries(session: JellyfinSession): Promise<JellyfinItem[]> {
+    if (isDemoServerUrl(session.serverUrl)) return demoBackend.libraries();
     try {
       const url = `${session.serverUrl}/Users/${session.userId}/Views`;
       const res = await this.fetchWithTimeoutAndRetry(url, {
@@ -657,6 +675,7 @@ export class JellyfinService {
     startIndex: number,
     limit: number
   ): Promise<ItemsPage> {
+    if (isDemoServerUrl(session.serverUrl)) return Promise.resolve(demoBackend.libraryItemsPage(parentId, startIndex, limit));
     // Only top-level series or movies in the library, never loose episodes or seasons
     return this.fetchItemsPage(
       session,
@@ -667,6 +686,7 @@ export class JellyfinService {
   }
 
   static fetchSeriesPage(session: JellyfinSession, startIndex: number, limit: number): Promise<ItemsPage> {
+    if (isDemoServerUrl(session.serverUrl)) return Promise.resolve(demoBackend.seriesPage(startIndex, limit));
     return this.fetchItemsPage(
       session,
       "IncludeItemTypes=Series&Recursive=true&SortBy=SortName",
@@ -676,6 +696,7 @@ export class JellyfinService {
   }
 
   static async fetchLatestSeries(session: JellyfinSession, limit: number = 20): Promise<JellyfinItem[]> {
+    if (isDemoServerUrl(session.serverUrl)) return demoBackend.latestSeries(limit);
     try {
       const url = `${session.serverUrl}/Users/${session.userId}/Items?IncludeItemTypes=Series&Recursive=true&SortBy=DateCreated&SortOrder=Descending&Limit=${limit}`;
       const res = await this.fetchWithTimeoutAndRetry(url, {
@@ -691,6 +712,7 @@ export class JellyfinService {
   }
 
   static async fetchNextUp(session: JellyfinSession, limit: number = 20): Promise<JellyfinItem[]> {
+    if (isDemoServerUrl(session.serverUrl)) return demoBackend.nextUp(limit);
     try {
       const url = `${session.serverUrl}/Shows/NextUp?userId=${session.userId}&Limit=${limit}&Fields=Overview,RunTimeTicks,UserData,ParentBackdropItemId,SeriesId,SeriesName`;
       const res = await this.fetchWithTimeoutAndRetry(url, {
@@ -709,6 +731,7 @@ export class JellyfinService {
     session: JellyfinSession,
     seriesId: string
   ): Promise<JellyfinItem | null> {
+    if (isDemoServerUrl(session.serverUrl)) return demoBackend.nextUpForSeries(seriesId);
     try {
       const url = `${session.serverUrl}/Shows/NextUp?seriesId=${seriesId}&userId=${session.userId}&Limit=1&Fields=Overview,RunTimeTicks,UserData,ParentBackdropItemId,SeriesId,SeriesName`;
       const res = await this.fetchWithTimeoutAndRetry(url, {
@@ -731,6 +754,7 @@ export class JellyfinService {
     query: string,
     types: string = "Movie,Series"
   ): Promise<JellyfinItem[]> {
+    if (isDemoServerUrl(session.serverUrl)) return demoBackend.search(query, types);
     try {
       const url = `${session.serverUrl}/Users/${session.userId}/Items?SearchTerm=${encodeURIComponent(
         query
@@ -748,6 +772,7 @@ export class JellyfinService {
   }
 
   static async fetchLatestMovies(session: JellyfinSession, limit: number = 20): Promise<JellyfinItem[]> {
+    if (isDemoServerUrl(session.serverUrl)) return demoBackend.latestMovies(limit);
     try {
       const url = `${session.serverUrl}/Users/${session.userId}/Items?IncludeItemTypes=Movie&Recursive=true&SortBy=DateCreated&SortOrder=Descending&Limit=${limit}`;
       const res = await this.fetchWithTimeoutAndRetry(url, {
@@ -763,6 +788,7 @@ export class JellyfinService {
   }
 
   static fetchMoviesPage(session: JellyfinSession, startIndex: number, limit: number): Promise<ItemsPage> {
+    if (isDemoServerUrl(session.serverUrl)) return Promise.resolve(demoBackend.moviesPage(startIndex, limit));
     return this.fetchItemsPage(
       session,
       "IncludeItemTypes=Movie&Recursive=true&SortBy=SortName",
@@ -772,6 +798,7 @@ export class JellyfinService {
   }
 
   static async fetchSeasons(session: JellyfinSession, seriesId: string): Promise<JellyfinItem[]> {
+    if (isDemoServerUrl(session.serverUrl)) return demoBackend.seasons(seriesId);
     try {
       const url = `${session.serverUrl}/Shows/${seriesId}/Seasons?userId=${session.userId}`;
       const res = await this.fetchWithTimeoutAndRetry(url, {
@@ -791,6 +818,7 @@ export class JellyfinService {
     seriesId: string,
     seasonId: string
   ): Promise<JellyfinItem[]> {
+    if (isDemoServerUrl(session.serverUrl)) return demoBackend.episodes(seriesId, seasonId);
     try {
       const url = `${session.serverUrl}/Shows/${seriesId}/Episodes?seasonId=${seasonId}&userId=${session.userId}&Fields=Overview,PrimaryImageAspectRatio,MediaSources`;
       const res = await this.fetchWithTimeoutAndRetry(url, {
@@ -809,6 +837,7 @@ export class JellyfinService {
     session: JellyfinSession,
     itemId: string
   ): Promise<JellyfinItem | null> {
+    if (isDemoServerUrl(session.serverUrl)) return demoBackend.itemDetails(itemId);
     try {
       const url = `${session.serverUrl}/Users/${session.userId}/Items/${itemId}?Fields=MediaSources,MediaStreams,Overview,RunTimeTicks,CommunityRating,ProductionYear,OfficialRating,Genres,Taglines,People,UserData`;
       const res = await this.fetchWithTimeoutAndRetry(url, {
@@ -910,6 +939,7 @@ export class JellyfinService {
     Version?: string;
     OperatingSystem?: string;
   } | null> {
+    if (isDemoServerUrl(session.serverUrl)) return { ServerName: "Jellyboxd Demo", Version: "1.0.0", OperatingSystem: "iOS" };
     try {
       const res = await fetch(`${session.serverUrl}/System/Info`, {
         headers: this.getAuthHeaders(session.token),
@@ -927,6 +957,7 @@ export class JellyfinService {
 
   // Playback reporting for live progress sync
   static async reportPlaybackStart(session: JellyfinSession, itemId: string): Promise<void> {
+    if (isDemoServerUrl(session.serverUrl)) return;
     try {
       await fetch(`${session.serverUrl}/Sessions/Playing`, {
         method: "POST",
@@ -949,6 +980,10 @@ export class JellyfinService {
     positionTicks: number,
     isPaused: boolean = false
   ): Promise<void> {
+    if (isDemoServerUrl(session.serverUrl)) {
+      demoBackend.reportProgress(itemId, positionTicks);
+      return;
+    }
     try {
       await fetch(`${session.serverUrl}/Sessions/Playing/Progress`, {
         method: "POST",
@@ -971,6 +1006,10 @@ export class JellyfinService {
     itemId: string,
     positionTicks: number
   ): Promise<void> {
+    if (isDemoServerUrl(session.serverUrl)) {
+      demoBackend.reportProgress(itemId, positionTicks);
+      return;
+    }
     try {
       await fetch(`${session.serverUrl}/Sessions/Playing/Stopped`, {
         method: "POST",
@@ -991,6 +1030,7 @@ export class JellyfinService {
    * images, keeping existing metadata and artwork (admin accounts only).
    */
   static async refreshLibrary(session: JellyfinSession): Promise<"ok" | "forbidden" | "error"> {
+    if (isDemoServerUrl(session.serverUrl)) return "forbidden";
     try {
       const libraries = await this.fetchLibraries(session);
       if (libraries.length === 0) return "error";
@@ -1016,6 +1056,7 @@ export class JellyfinService {
     itemId: string,
     played: boolean = true
   ): Promise<boolean> {
+    if (isDemoServerUrl(session.serverUrl)) return demoBackend.setPlayed(itemId, played);
     try {
       const url = `${session.serverUrl}/Users/${session.userId}/PlayedItems/${itemId}`;
       const res = await fetch(url, {
@@ -1033,6 +1074,7 @@ export class JellyfinService {
     itemId: string,
     favorite: boolean = true
   ): Promise<boolean> {
+    if (isDemoServerUrl(session.serverUrl)) return demoBackend.setFavorite(itemId, favorite);
     try {
       const url = `${session.serverUrl}/Users/${session.userId}/FavoriteItems/${itemId}`;
       const res = await fetch(url, {
