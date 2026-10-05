@@ -105,6 +105,8 @@ export default function HomeScreen() {
         const timer = setTimeout(loadData, 650);
         return () => clearTimeout(timer);
       }
+      // Deliberately only re-runs for a new session: `loadData` is recreated every render
+      // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [session])
   );
 

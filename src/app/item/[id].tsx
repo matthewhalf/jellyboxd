@@ -133,6 +133,8 @@ export default function ItemDetailScreen() {
       if (!session || !id || isLoading) return;
       const timer = setTimeout(refreshSilently, 400);
       return () => clearTimeout(timer);
+      // Deliberately omits `isLoading`/`refreshSilently`: re-running on every render would refetch in a loop
+      // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [session, id, selectedSeasonId])
   );
 

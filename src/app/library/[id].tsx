@@ -31,6 +31,8 @@ export default function LibraryScreen() {
     const current = ++generation.current;
     itemsRef.current = [];
     loadingMoreRef.current = false;
+    // Starting a fresh load for a new session/library: drop the previous list before fetching
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     setItems([]);
     setHasMore(false);
     setLoadingMore(false);
@@ -45,6 +47,8 @@ export default function LibraryScreen() {
       .catch((err) => console.error("Errore fetch libreria:", err))
       .finally(() => generation.current === current && setIsLoading(false));
     return () => {
+      // The counter itself (not a rendered node) is bumped to invalidate in-flight requests
+      // eslint-disable-next-line react-hooks/exhaustive-deps
       generation.current++;
     };
   }, [session, id]);

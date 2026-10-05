@@ -74,12 +74,13 @@ export function PosterGridScreen({
     setHasMore(false);
     setLoadingMore(false);
     setIsLoading(true);
-    itemsRef.current = [];
-    loadingMoreRef.current = false;
   }
   const activeSessionKey = useRef(sessionKey);
+  // Refs can't be written during render, so they follow the session here (declared before the load effect below)
   useEffect(() => {
     activeSessionKey.current = sessionKey;
+    itemsRef.current = [];
+    loadingMoreRef.current = false;
   }, [sessionKey]);
 
   const commitItems = (next: JellyfinItem[]) => {
@@ -129,6 +130,8 @@ export function PosterGridScreen({
   useFocusEffect(
     useCallback(() => {
       load();
+      // Deliberately only re-runs for a new session: `load` is recreated every render
+      // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [session])
   );
 
