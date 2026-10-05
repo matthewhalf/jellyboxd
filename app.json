@@ -10,7 +10,7 @@
     "backgroundColor": "#14181c",
     "ios": {
       "backgroundColor": "#14181c",
-      "supportsTablet": true,
+      "supportsTablet": false,
       "bundleIdentifier": "com.matthewhalf.jellyboxd",
       "infoPlist": {
         "UIBackgroundModes": [
