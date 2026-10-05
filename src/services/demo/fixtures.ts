@@ -89,7 +89,7 @@ function series(
 function season(seriesSlug: string, seriesName: string): JellyfinItem {
   return {
     Id: `demo-season-${seriesSlug}-1`,
-    Name: "Stagione 1",
+    Name: "Season 1",
     Type: "Season",
     SeriesId: `demo-series-${seriesSlug}`,
     SeriesName: seriesName,
@@ -119,7 +119,7 @@ function episode(
     SeriesId: `demo-series-${seriesSlug}`,
     SeriesName: seriesName,
     SeasonId: `demo-season-${seriesSlug}-1`,
-    SeasonName: "Stagione 1",
+    SeasonName: "Season 1",
     ParentIndexNumber: 1,
     IndexNumber: number,
     ParentBackdropItemId: `demo-series-${seriesSlug}`,
@@ -131,30 +131,30 @@ function episode(
 }
 
 export const DEMO_LIBRARIES: JellyfinItem[] = [
-  { Id: "demo-lib-movies", Name: "Film", Type: "CollectionFolder" },
-  { Id: "demo-lib-series", Name: "Serie TV", Type: "CollectionFolder" },
+  { Id: "demo-lib-movies", Name: "Movies", Type: "CollectionFolder" },
+  { Id: "demo-lib-series", Name: "TV Shows", Type: "CollectionFolder" },
 ];
 
 export const DEMO_MOVIES: JellyfinItem[] = [
-  movie("bbb", "Big Buck Bunny", 2008, 596.48, 7.6, "2026-09-01T10:00:00.0000000Z", ["Animazione", "Commedia"],
-    "Un enorme coniglio dal cuore gentile si vendica di tre roditori dispettosi che hanno disturbato la sua quiete."),
-  movie("sintel", "Sintel", 2010, 888.064, 7.5, "2026-09-02T10:00:00.0000000Z", ["Animazione", "Fantasy"],
-    "Una giovane donna si mette sulle tracce del drago che le ha portato via il suo cucciolo."),
-  movie("tos", "Tears of Steel", 2012, 734.167, 6.8, "2026-09-03T10:00:00.0000000Z", ["Fantascienza"],
-    "In un futuro devastato dai robot, un gruppo di guerrieri e scienziati tenta di salvare il mondo da un errore del passato."),
-  movie("ed", "Elephants Dream", 2006, 658.32, 6.2, "2026-09-04T10:00:00.0000000Z", ["Animazione", "Surreale"],
-    "Due uomini esplorano una macchina enorme e misteriosa, tra sogno e realtà."),
-  movie("cosmos", "Cosmos Laundromat", 2015, 730.616, 7.1, "2026-09-05T10:00:00.0000000Z", ["Animazione", "Fantasy"],
-    "Franck, una pecora sull'orlo del baratro, incontra uno strano venditore che gli offre una nuova vita."),
-  movie("spring", "Spring", 2019, 464.127, 7.9, "2026-09-06T10:00:00.0000000Z", ["Animazione", "Fantasy"],
-    "Una pastorella e il suo cane affrontano gli spiriti antichi per il ritorno della primavera."),
+  movie("bbb", "Big Buck Bunny", 2008, 596.48, 7.6, "2026-09-01T10:00:00.0000000Z", ["Animation", "Comedy"],
+    "A gentle giant rabbit takes revenge on three mischievous rodents who have disturbed his peace."),
+  movie("sintel", "Sintel", 2010, 888.064, 7.5, "2026-09-02T10:00:00.0000000Z", ["Animation", "Fantasy"],
+    "A young woman sets out to track down the dragon that took her young friend."),
+  movie("tos", "Tears of Steel", 2012, 734.167, 6.8, "2026-09-03T10:00:00.0000000Z", ["Sci-Fi"],
+    "In a future ravaged by robots, a band of warriors and scientists tries to save the world from a mistake of the past."),
+  movie("ed", "Elephants Dream", 2006, 658.32, 6.2, "2026-09-04T10:00:00.0000000Z", ["Animation", "Surreal"],
+    "Two men explore a vast, mysterious machine, somewhere between dream and reality."),
+  movie("cosmos", "Cosmos Laundromat", 2015, 730.616, 7.1, "2026-09-05T10:00:00.0000000Z", ["Animation", "Fantasy"],
+    "Franck, a sheep on the edge, meets a strange salesman who offers him a new life."),
+  movie("spring", "Spring", 2019, 464.127, 7.9, "2026-09-06T10:00:00.0000000Z", ["Animation", "Fantasy"],
+    "A shepherd girl and her dog face ancient spirits to bring back the spring."),
 ];
 
 export const DEMO_SERIES: JellyfinItem[] = [
-  series("caminandes", "Caminandes", 2013, "2026-09-07T10:00:00.0000000Z", ["Animazione", "Commedia"],
-    "Le avventure di Koro, un lama in cerca di cibo tra la neve della Patagonia."),
-  series("shorts", "Blender Studio Shorts", 2023, "2026-09-08T10:00:00.0000000Z", ["Animazione", "Antologia"],
-    "Una raccolta di cortometraggi open source dal Blender Studio."),
+  series("caminandes", "Caminandes", 2013, "2026-09-07T10:00:00.0000000Z", ["Animation", "Comedy"],
+    "The adventures of Koro, a llama looking for food in the Patagonian snow."),
+  series("shorts", "Blender Studio Shorts", 2023, "2026-09-08T10:00:00.0000000Z", ["Animation", "Anthology"],
+    "A collection of open source animated shorts from Blender Studio."),
 ];
 
 export const DEMO_SEASONS: JellyfinItem[] = [
@@ -164,18 +164,18 @@ export const DEMO_SEASONS: JellyfinItem[] = [
 
 export const DEMO_EPISODES: JellyfinItem[] = [
   episode("cam1", "caminandes", "Caminandes", 1, "Llama Drama", 90.001, "2026-09-07T10:01:00.0000000Z",
-    "Koro cerca di attraversare un recinto per raggiungere dei deliziosi cespugli."),
+    "Koro tries to cross a fence to reach some delicious bushes."),
   episode("cam2", "caminandes", "Caminandes", 2, "Gran Dillama", 146.042, "2026-09-07T10:02:00.0000000Z",
-    "Koro tenta di raggiungere l'erba oltre la strada, ostacolato da un armadillo dispettoso."),
+    "Koro tries to reach the grass across the road, hindered by a mischievous armadillo."),
   episode("cam3", "caminandes", "Caminandes", 3, "Llamigos", 150.101, "2026-09-07T10:03:00.0000000Z",
-    "Koro e Oti si contendono un pezzo di frutta in un inverno gelido."),
+    "Koro and Oti fight over a piece of fruit in a freezing winter."),
   episode("hero", "shorts", "Blender Studio Shorts", 1, "Hero", 236.665, "2026-09-08T10:01:00.0000000Z",
-    "Cortometraggio d'animazione open source del Blender Studio."),
+    "Open source animated short film from Blender Studio."),
   episode("wingit", "shorts", "Blender Studio Shorts", 2, "Wing It!", 237.937, "2026-09-08T10:02:00.0000000Z",
-    "Cortometraggio d'animazione open source del Blender Studio."),
+    "Open source animated short film from Blender Studio."),
   {
     ...episode("sprite", "shorts", "Blender Studio Shorts", 3, "Sprite Fright", 629.841, "2026-09-08T10:03:00.0000000Z",
-      "Cortometraggio d'animazione open source del Blender Studio, tra commedia e brivido."),
+      "Open source animated short film from Blender Studio, somewhere between comedy and thrills."),
     OfficialRating: "PG",
   },
 ];

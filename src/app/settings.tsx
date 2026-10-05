@@ -242,8 +242,8 @@ export default function SettingsScreen() {
         </Section>
 
         {isDemo && (
-          <Section title="Modalità demo" footer={DEMO_ATTRIBUTION}>
-            <InfoRow label="Contenuti" value="Film open source Blender" />
+          <Section title="Demo mode" footer={DEMO_ATTRIBUTION}>
+            <InfoRow label="Content" value="Blender open source films" />
           </Section>
         )}
 
