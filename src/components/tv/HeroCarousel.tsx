@@ -13,6 +13,7 @@ import {
   View,
 } from "react-native";
 import { Gutter, Palette, Typography } from "../../constants/theme";
+import { useTranslation } from "../../i18n";
 import { haptics } from "../../lib/haptics";
 import { JellyfinItem, JellyfinService, JellyfinSession } from "../../services/jellyfin";
 import { PillButton } from "./PillButton";
@@ -149,12 +150,13 @@ interface HeroSlideProps {
 
 function HeroSlide({ item, session, width, height, imageTransform }: HeroSlideProps) {
   const router = useRouter();
+  const { t } = useTranslation();
   const [logoFailed, setLogoFailed] = useState(false);
   const logoId = JellyfinService.getLogoItemId(item);
   const showLogo = !!logoId && !logoFailed;
 
   const meta = [
-    item.Type === "Movie" ? "Film" : "Serie TV",
+    item.Type === "Movie" ? t("hero.movie") : t("hero.series"),
     ...(item.Genres ?? []).slice(0, 2),
     item.ProductionYear,
   ]
@@ -205,7 +207,7 @@ function HeroSlide({ item, session, width, height, imageTransform }: HeroSlidePr
           {meta}
         </Text>
 
-        <PillButton label="Scopri di più" compact onPress={openDetails} style={styles.action} />
+        <PillButton label={t("hero.details")} compact onPress={openDetails} style={styles.action} />
       </View>
     </Pressable>
   );

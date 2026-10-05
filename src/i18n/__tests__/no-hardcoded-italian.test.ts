@@ -19,13 +19,8 @@ const SRC = path.resolve(process.cwd(), "src");
 /** Files that still contain hand-written Italian. Each migration task removes its files from here. */
 const ITALIAN_PENDING: string[] = [
   "app/item/[id].tsx",
-  "app/(tabs)/index.tsx",
-  "app/(tabs)/movies.tsx",
   "app/(tabs)/search/index.tsx",
-  "app/(tabs)/series.tsx",
   "components/MediaLink.tsx",
-  "components/tv/ContinueWatchingCard.tsx",
-  "components/tv/HeroCarousel.tsx",
   "context/NativePlayerContext.tsx",
   "services/jellyfin.ts",
 ].map((f) => f.split("/").join(path.sep));

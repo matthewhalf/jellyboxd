@@ -4,6 +4,9 @@ export const it: Translations = {
   common: {
     cancel: "Annulla",
     error: "Errore",
+    durationMinutes: "{minutes} min",
+    durationHours: "{hours} h",
+    durationHoursMinutes: "{hours} h {minutes} min",
     back: "Indietro",
   },
   login: {
@@ -25,6 +28,33 @@ export const it: Translations = {
     title: "Aggiungi server",
     subtitle:
       "Accedi con le credenziali di un altro server Jellyfin. Resterà salvato per passare da un account all'altro in un tocco.",
+  },
+  home: {
+    continueWatching: "Continua a guardare",
+    recentSeries: "Serie recenti",
+    recentMovies: "Film recenti",
+    errorTitle: "Connessione non riuscita",
+    errorMessage: "Impossibile caricare i contenuti dal server Jellyfin.",
+    retry: "Riprova",
+  },
+  hero: {
+    movie: "Film",
+    series: "Serie TV",
+    details: "Scopri di più",
+  },
+  continueCard: {
+    resume: "Riprendi",
+    nextEpisode: "Prossimo episodio",
+    toWatch: "Da guardare",
+    timeLeft: "{time} rimasti",
+  },
+  movies: {
+    title: "Film",
+    empty: "Nessun film trovato nel server",
+  },
+  series: {
+    title: "Serie TV",
+    empty: "Nessuna serie trovata nel server",
   },
   tabs: {
     home: "Home",

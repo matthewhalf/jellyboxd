@@ -7,7 +7,8 @@ const ITALIAN_WORDS = [
   "Mostra", "Nascondi", "Segna", "Riprendi", "Altri", "Tutti", "Tutte", "Nome", "Serie", "Nessuna",
   "trovata", "trovato", "trovati", "Caricamento", "Cancella", "Apri", "Torna", "Conferma", "Condividi",
   "Guarda", "Guardato", "Visto", "Pausa", "Stato", "Versione", "Sconosciuto", "Durata", "Anno", "Genere",
-  "Regia", "Attori", "Interpreti", "Sinossi",
+  "Regia", "Attori", "Interpreti", "Sinossi", "recenti", "riuscita", "Connessione", "rimasti", "Scopri",
+  "rimuovere", "rimosso", "Impossibile", "Riprendi", "Aggiunto", "Rimosso",
 ];
 
 const WORD_RE = new RegExp(`\\b(${ITALIAN_WORDS.join("|")})\\b`, "i");

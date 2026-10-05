@@ -1,13 +1,15 @@
 import React from "react";
 import { PosterGridScreen } from "../../components/tv/PosterGridScreen";
+import { useTranslation } from "../../i18n";
 import { JellyfinService } from "../../services/jellyfin";
 
 export default function MoviesScreen() {
+  const { t } = useTranslation();
   return (
     <PosterGridScreen
-      title="Film"
+      title={t("movies.title")}
       emptyIcon="film-outline"
-      emptyText="Nessun film trovato nel server"
+      emptyText={t("movies.empty")}
       fetchPage={(session, start, limit) => JellyfinService.fetchMoviesPage(session, start, limit)}
     />
   );

@@ -23,12 +23,14 @@ import { UserAvatar } from "../../components/tv/UserAvatar";
 import { Gutter, Palette, Radius, Typography } from "../../constants/theme";
 import { useAuth } from "../../context/AuthContext";
 import { usePlaybackFinished } from "../../context/NativePlayerContext";
+import { useTranslation } from "../../i18n";
 import { haptics } from "../../lib/haptics";
 import { JellyfinItem, JellyfinService } from "../../services/jellyfin";
 
 const CONTINUE_GAP = 12;
 
 export default function HomeScreen() {
+  const { t } = useTranslation();
   const { session, isLoading } = useAuth();
   const router = useRouter();
   const insets = useSafeAreaInsets();
@@ -183,7 +185,7 @@ export default function HomeScreen() {
 
         {continueItems.length > 0 && (
           <Shelf
-            title="Continua a guardare"
+            title={t("home.continueWatching")}
             gap={CONTINUE_GAP}
             snapInterval={continueWidth + CONTINUE_GAP}
           >
@@ -202,7 +204,7 @@ export default function HomeScreen() {
         )}
 
         {latestSeries.length > 0 && (
-          <Shelf title="Serie recenti" onSeeAll={() => router.navigate("/series")}>
+          <Shelf title={t("home.recentSeries")} onSeeAll={() => router.navigate("/series")}>
             {latestSeries.map((series) => (
               <PosterCard
                 key={series.Id}
@@ -218,7 +220,7 @@ export default function HomeScreen() {
         )}
 
         {moviesList.length > 0 && (
-          <Shelf title="Film recenti" onSeeAll={() => router.navigate("/movies")}>
+          <Shelf title={t("home.recentMovies")} onSeeAll={() => router.navigate("/movies")}>
             {moviesList.map((movie) => (
               <PosterCard
                 key={movie.Id}
@@ -241,10 +243,8 @@ export default function HomeScreen() {
         {!initialLoading && hasError && isEmpty && (
           <View style={styles.stateContainer}>
             <Ionicons name="cloud-offline-outline" size={48} color={Palette.labelSecondary} />
-            <Text style={styles.errorTitle}>Connessione non riuscita</Text>
-            <Text style={styles.errorSubtitle}>
-              Impossibile caricare i contenuti dal server Jellyfin.
-            </Text>
+            <Text style={styles.errorTitle}>{t("home.errorTitle")}</Text>
+            <Text style={styles.errorSubtitle}>{t("home.errorMessage")}</Text>
             <Pressable
               style={styles.retryButton}
               onPress={() => {
@@ -252,7 +252,7 @@ export default function HomeScreen() {
                 loadData();
               }}
             >
-              <Text style={styles.retryButtonText}>Riprova</Text>
+              <Text style={styles.retryButtonText}>{t("home.retry")}</Text>
             </Pressable>
           </View>
         )}
@@ -282,7 +282,7 @@ export default function HomeScreen() {
           }}
           hitSlop={10}
           accessibilityRole="button"
-          accessibilityLabel="Impostazioni"
+          accessibilityLabel={t("settings.title")}
         >
           <UserAvatar session={session} size={34} />
         </Pressable>

@@ -5,6 +5,9 @@ export const en = {
   common: {
     cancel: "Cancel",
     error: "Error",
+    durationMinutes: "{minutes} min",
+    durationHours: "{hours} h",
+    durationHoursMinutes: "{hours} h {minutes} min",
     back: "Back",
   },
   login: {
@@ -26,6 +29,33 @@ export const en = {
     title: "Add server",
     subtitle:
       "Sign in with the credentials of another Jellyfin server. It will stay saved so you can switch between accounts in one tap.",
+  },
+  home: {
+    continueWatching: "Continue Watching",
+    recentSeries: "Recent series",
+    recentMovies: "Recent movies",
+    errorTitle: "Connection failed",
+    errorMessage: "Unable to load content from the Jellyfin server.",
+    retry: "Try again",
+  },
+  hero: {
+    movie: "Movie",
+    series: "TV series",
+    details: "Learn more",
+  },
+  continueCard: {
+    resume: "Resume",
+    nextEpisode: "Next episode",
+    toWatch: "To watch",
+    timeLeft: "{time} left",
+  },
+  movies: {
+    title: "Movies",
+    empty: "No movies found on the server",
+  },
+  series: {
+    title: "TV Shows",
+    empty: "No series found on the server",
   },
   tabs: {
     home: "Home",

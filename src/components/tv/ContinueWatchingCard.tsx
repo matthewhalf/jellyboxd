@@ -3,6 +3,7 @@ import { LinearGradient } from "expo-linear-gradient";
 import React, { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { Animated, StyleSheet, Text, View } from "react-native";
 import { Palette, Radius, Typography } from "../../constants/theme";
+import { useTranslation, type TranslationKey } from "../../i18n";
 import { JellyfinItem, JellyfinService, JellyfinSession } from "../../services/jellyfin";
 import { MediaLink } from "../MediaLink";
 import { ProgressBar } from "./ProgressBar";
@@ -18,11 +19,13 @@ interface ContinueWatchingCardProps {
   onRefresh?: () => void;
 }
 
-function formatMinutes(mins: number): string {
-  if (mins < 60) return `${mins} min`;
-  const h = Math.floor(mins / 60);
-  const m = mins % 60;
-  return m > 0 ? `${h} h ${m} min` : `${h} h`;
+function formatMinutes(mins: number, t: (key: TranslationKey, params?: Record<string, string | number>) => string): string {
+  if (mins < 60) return t("common.durationMinutes", { minutes: mins });
+  const hours = Math.floor(mins / 60);
+  const minutes = mins % 60;
+  return minutes > 0
+    ? t("common.durationHoursMinutes", { hours, minutes })
+    : t("common.durationHours", { hours });
 }
 
 /**
@@ -37,6 +40,7 @@ export function ContinueWatchingCard({
   gap,
   onRefresh,
 }: ContinueWatchingCardProps) {
+  const { t } = useTranslation();
 
   // FLIP reorder: slide from the old slot when the list order changes
   const prevIndexRef = useRef(index);
@@ -104,11 +108,11 @@ export function ContinueWatchingCard({
   let overline: string;
   if (inProgress && totalTicks > 0) {
     const left = Math.max(1, Math.round((totalTicks - positionTicks) / TICKS_PER_MINUTE));
-    overline = `${formatMinutes(left)} rimasti`;
+    overline = t("continueCard.timeLeft", { time: formatMinutes(left, t) });
   } else if (inProgress) {
-    overline = "Riprendi";
+    overline = t("continueCard.resume");
   } else {
-    overline = isEpisode ? "Prossimo episodio" : "Da guardare";
+    overline = isEpisode ? t("continueCard.nextEpisode") : t("continueCard.toWatch");
   }
 
   const title = isEpisode ? item.SeriesName || item.Name : item.Name;
