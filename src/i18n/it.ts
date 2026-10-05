@@ -6,6 +6,26 @@ export const it: Translations = {
     error: "Errore",
     back: "Indietro",
   },
+  login: {
+    signIn: "Accedi",
+    addServer: "Aggiungi server",
+    subtitleSaved: "Scegli un server o aggiungine uno nuovo",
+    subtitleNew: "Accedi al tuo server Jellyfin",
+    orAddNew: "OPPURE AGGIUNGI UN NUOVO SERVER",
+    footer: "I progressi di visione vengono sincronizzati automaticamente con Jellyfin.",
+    attentionTitle: "Attenzione",
+    missingFields: "Inserisci l'indirizzo del server e il nome utente.",
+    failedTitle: "Errore di accesso",
+    failedMessage: "Impossibile connettersi al server.",
+    serverPlaceholder: "Indirizzo server (es. http://192.168.1.10:8096)",
+    usernamePlaceholder: "Nome utente",
+    passwordPlaceholder: "Password",
+  },
+  addServer: {
+    title: "Aggiungi server",
+    subtitle:
+      "Accedi con le credenziali di un altro server Jellyfin. Resterà salvato per passare da un account all'altro in un tocco.",
+  },
   tabs: {
     home: "Home",
     series: "Serie",

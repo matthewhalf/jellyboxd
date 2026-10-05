@@ -5,10 +5,12 @@ import { KeyboardAvoidingView, Platform, Pressable, ScrollView, StyleSheet, Text
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { ServerLoginForm } from "../components/ServerLoginForm";
 import { Gutter, Palette, Typography } from "../constants/theme";
+import { useTranslation } from "../i18n";
 import { haptics } from "../lib/haptics";
 
 export default function AddServerScreen() {
   const router = useRouter();
+  const { t } = useTranslation();
   const insets = useSafeAreaInsets();
 
   return (
@@ -25,11 +27,11 @@ export default function AddServerScreen() {
           hitSlop={10}
           style={styles.backButton}
           accessibilityRole="button"
-          accessibilityLabel="Indietro"
+          accessibilityLabel={t("common.back")}
         >
           <Ionicons name="chevron-back" size={22} color={Palette.label} />
         </Pressable>
-        <Text style={styles.headerTitle}>Aggiungi server</Text>
+        <Text style={styles.headerTitle}>{t("addServer.title")}</Text>
         <View style={styles.headerSpacer} />
       </View>
 
@@ -37,12 +39,9 @@ export default function AddServerScreen() {
         contentContainerStyle={[styles.scrollContent, { paddingTop: insets.top + 68 }]}
         keyboardShouldPersistTaps="handled"
       >
-        <Text style={styles.subtitle}>
-          Accedi con le credenziali di un altro server Jellyfin. Resterà salvato per passare da un
-          account all&apos;altro in un tocco.
-        </Text>
+        <Text style={styles.subtitle}>{t("addServer.subtitle")}</Text>
 
-        <ServerLoginForm submitLabel="Accedi" onSuccess={() => router.back()} />
+        <ServerLoginForm submitLabel={t("login.signIn")} onSuccess={() => router.back()} />
       </ScrollView>
     </KeyboardAvoidingView>
   );

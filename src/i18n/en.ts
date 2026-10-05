@@ -7,6 +7,26 @@ export const en = {
     error: "Error",
     back: "Back",
   },
+  login: {
+    signIn: "Sign in",
+    addServer: "Add server",
+    subtitleSaved: "Choose a server or add a new one",
+    subtitleNew: "Sign in to your Jellyfin server",
+    orAddNew: "OR ADD A NEW SERVER",
+    footer: "Watch progress is synced automatically with Jellyfin.",
+    attentionTitle: "Attention",
+    missingFields: "Enter the server address and the user name.",
+    failedTitle: "Sign-in error",
+    failedMessage: "Unable to connect to the server.",
+    serverPlaceholder: "Server address (e.g. http://192.168.1.10:8096)",
+    usernamePlaceholder: "User name",
+    passwordPlaceholder: "Password",
+  },
+  addServer: {
+    title: "Add server",
+    subtitle:
+      "Sign in with the credentials of another Jellyfin server. It will stay saved so you can switch between accounts in one tap.",
+  },
   tabs: {
     home: "Home",
     series: "Series",

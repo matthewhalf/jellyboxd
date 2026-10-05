@@ -14,12 +14,14 @@ import {
 } from "react-native";
 import { Gutter, Palette, Radius, Typography } from "../constants/theme";
 import { useAuth } from "../context/AuthContext";
+import { useTranslation } from "../i18n";
 import { haptics } from "../lib/haptics";
 import { SavedServer } from "../services/jellyfin";
 import { ServerLoginForm } from "./ServerLoginForm";
 
 export const LoginScreen: React.FC = () => {
   const { savedServers, switchServer, forgetServer } = useAuth();
+  const { t } = useTranslation();
   const [switchingId, setSwitchingId] = useState<string | null>(null);
   const hasSavedServers = savedServers.length > 0;
 
@@ -31,8 +33,8 @@ export const LoginScreen: React.FC = () => {
     } catch (err: any) {
       haptics.error();
       Alert.alert(
-        "Server non raggiungibile",
-        err.message || `Impossibile connettersi a "${server.serverUrl}".`
+        t("settings.switchServer.unreachableTitle"),
+        err.message || t("settings.switchServer.unreachableMessage", { serverUrl: server.serverUrl })
       );
     } finally {
       setSwitchingId(null);
@@ -41,10 +43,14 @@ export const LoginScreen: React.FC = () => {
 
   const handleForget = (server: SavedServer) => {
     haptics.medium();
-    Alert.alert("Rimuovi server", `Dimenticare l'accesso a "${server.userName}" su ${server.serverUrl}?`, [
-      { text: "Annulla", style: "cancel" },
-      { text: "Rimuovi", style: "destructive", onPress: () => forgetServer(server.id) },
-    ]);
+    Alert.alert(
+      t("settings.forget.title"),
+      t("settings.forget.message", { userName: server.userName, serverUrl: server.serverUrl }),
+      [
+        { text: t("common.cancel"), style: "cancel" },
+        { text: t("settings.forget.confirm"), style: "destructive", onPress: () => forgetServer(server.id) },
+      ]
+    );
   };
 
   return (
@@ -61,7 +67,7 @@ export const LoginScreen: React.FC = () => {
           />
           <Text style={styles.wordmark}>jellyboxd</Text>
           <Text style={styles.subtitle}>
-            {hasSavedServers ? "Scegli un server o aggiungine uno nuovo" : "Accedi al tuo server Jellyfin"}
+            {hasSavedServers ? t("login.subtitleSaved") : t("login.subtitleNew")}
           </Text>
         </View>
 
@@ -99,13 +105,11 @@ export const LoginScreen: React.FC = () => {
           </View>
         )}
 
-        {hasSavedServers && <Text style={styles.orLabel}>OPPURE AGGIUNGI UN NUOVO SERVER</Text>}
+        {hasSavedServers && <Text style={styles.orLabel}>{t("login.orAddNew")}</Text>}
 
-        <ServerLoginForm submitLabel={hasSavedServers ? "Aggiungi server" : "Accedi"} />
+        <ServerLoginForm submitLabel={hasSavedServers ? t("login.addServer") : t("login.signIn")} />
 
-        <Text style={styles.footerText}>
-          I progressi di visione vengono sincronizzati automaticamente con Jellyfin.
-        </Text>
+        <Text style={styles.footerText}>{t("login.footer")}</Text>
       </ScrollView>
     </KeyboardAvoidingView>
   );

@@ -3,6 +3,7 @@ import { ActivityIndicator, Alert, Animated, Pressable, StyleSheet, Text, TextIn
 import { Palette, Radius, Typography } from "../constants/theme";
 import { useAuth } from "../context/AuthContext";
 import { usePressScale } from "../hooks/use-press-scale";
+import { useTranslation } from "../i18n";
 
 interface ServerLoginFormProps {
   submitLabel?: string;
@@ -10,8 +11,9 @@ interface ServerLoginFormProps {
 }
 
 /** Server URL + credentials fields and submit button, shared by the first-time login screen and "add server". */
-export function ServerLoginForm({ submitLabel = "Accedi", onSuccess }: ServerLoginFormProps) {
+export function ServerLoginForm({ submitLabel, onSuccess }: ServerLoginFormProps) {
   const { login } = useAuth();
+  const { t } = useTranslation();
   const [serverUrl, setServerUrl] = useState("");
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
@@ -20,7 +22,7 @@ export function ServerLoginForm({ submitLabel = "Accedi", onSuccess }: ServerLog
 
   const handleLogin = async () => {
     if (!serverUrl.trim() || !username.trim()) {
-      Alert.alert("Attenzione", "Inserisci l'indirizzo del server e il nome utente.");
+      Alert.alert(t("login.attentionTitle"), t("login.missingFields"));
       return;
     }
 
@@ -29,7 +31,7 @@ export function ServerLoginForm({ submitLabel = "Accedi", onSuccess }: ServerLog
       await login(serverUrl.trim(), username.trim(), password);
       onSuccess?.();
     } catch (err: any) {
-      Alert.alert("Errore di accesso", err.message || "Impossibile connettersi al server.");
+      Alert.alert(t("login.failedTitle"), err.message || t("login.failedMessage"));
     } finally {
       setIsLoading(false);
     }
@@ -40,7 +42,7 @@ export function ServerLoginForm({ submitLabel = "Accedi", onSuccess }: ServerLog
       <View style={styles.fieldGroup}>
         <TextInput
           style={styles.input}
-          placeholder="Indirizzo server (es. http://192.168.1.10:8096)"
+          placeholder={t("login.serverPlaceholder")}
           placeholderTextColor={Palette.labelTertiary}
           value={serverUrl}
           onChangeText={setServerUrl}
@@ -53,7 +55,7 @@ export function ServerLoginForm({ submitLabel = "Accedi", onSuccess }: ServerLog
         <View style={styles.divider} />
         <TextInput
           style={styles.input}
-          placeholder="Nome utente"
+          placeholder={t("login.usernamePlaceholder")}
           placeholderTextColor={Palette.labelTertiary}
           value={username}
           onChangeText={setUsername}
@@ -65,7 +67,7 @@ export function ServerLoginForm({ submitLabel = "Accedi", onSuccess }: ServerLog
         <View style={styles.divider} />
         <TextInput
           style={styles.input}
-          placeholder="Password"
+          placeholder={t("login.passwordPlaceholder")}
           placeholderTextColor={Palette.labelTertiary}
           value={password}
           onChangeText={setPassword}
@@ -89,7 +91,7 @@ export function ServerLoginForm({ submitLabel = "Accedi", onSuccess }: ServerLog
           {isLoading ? (
             <ActivityIndicator color={Palette.buttonPrimaryLabel} />
           ) : (
-            <Text style={styles.buttonText}>{submitLabel}</Text>
+            <Text style={styles.buttonText}>{submitLabel ?? t("login.signIn")}</Text>
           )}
         </Pressable>
       </Animated.View>
