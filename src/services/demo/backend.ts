@@ -1,3 +1,4 @@
+import { t, type TranslationKey } from "../../i18n/translate";
 import type { ItemsPage, JellyfinItem } from "../jellyfin";
 import { DEMO_EPISODES, DEMO_LIBRARIES, DEMO_MOVIES, DEMO_SEASONS, DEMO_SERIES } from "./fixtures";
 
@@ -25,8 +26,23 @@ function find(itemId: string): JellyfinItem | undefined {
   return ALL_ITEMS.find((i) => i.Id === itemId);
 }
 
+/** Raw fixtures hold `demo.*` dictionary keys where text is localized; anything else is a proper name. */
+function translate(value: string | undefined): string | undefined {
+  return value?.startsWith("demo.") ? t(value as TranslationKey) : value;
+}
+
+function localize(item: JellyfinItem): JellyfinItem {
+  return {
+    ...item,
+    Name: translate(item.Name) ?? item.Name,
+    Overview: translate(item.Overview),
+    SeasonName: translate(item.SeasonName),
+    Genres: item.Genres?.map((genre) => translate(genre) ?? genre),
+  };
+}
+
 function withState(item: JellyfinItem): JellyfinItem {
-  return { ...item, UserData: { ...item.UserData, ...userState.get(item.Id) } };
+  return localize({ ...item, UserData: { ...item.UserData, ...userState.get(item.Id) } });
 }
 
 function patchState(itemId: string, patch: Partial<UserData>): void {

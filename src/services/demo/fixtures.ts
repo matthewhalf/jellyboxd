@@ -32,6 +32,16 @@ function mediaSource(id: string): MediaSourceInfo[] {
   ];
 }
 
+type DemoGenre = "animation" | "comedy" | "fantasy" | "scifi" | "surreal" | "anthology";
+
+/**
+ * Display text is kept as dictionary keys (`demo.*`); the backend translates them on every read, so the
+ * catalog follows the app language. Film and episode titles are proper names and stay as they are.
+ */
+const genreKey = (genre: DemoGenre) => `demo.genres.${genre}`;
+const overviewKey = (id: string) => `demo.overview.${id}`;
+const SEASON_ONE = "demo.season1";
+
 function movie(
   slug: string,
   name: string,
@@ -39,20 +49,19 @@ function movie(
   seconds: number,
   rating: number,
   dateCreated: string,
-  genres: string[],
-  overview: string
+  genres: DemoGenre[]
 ): JellyfinItem {
   const id = `demo-movie-${slug}`;
   return {
     Id: id,
     Name: name,
     Type: "Movie",
-    Overview: overview,
+    Overview: overviewKey(id),
     ProductionYear: year,
     CommunityRating: rating,
     RunTimeTicks: Math.round(seconds * TICKS_PER_SECOND),
     OfficialRating: "G",
-    Genres: genres,
+    Genres: genres.map(genreKey),
     DateCreated: dateCreated,
     ImageTags: { Primary: "demo" },
     BackdropImageTags: ["demo"],
@@ -61,23 +70,17 @@ function movie(
   };
 }
 
-function series(
-  slug: string,
-  name: string,
-  year: number,
-  dateCreated: string,
-  genres: string[],
-  overview: string
-): JellyfinItem {
+function series(slug: string, name: string, year: number, dateCreated: string, genres: DemoGenre[]): JellyfinItem {
+  const id = `demo-series-${slug}`;
   return {
-    Id: `demo-series-${slug}`,
+    Id: id,
     Name: name,
     Type: "Series",
-    Overview: overview,
+    Overview: overviewKey(id),
     ProductionYear: year,
     CommunityRating: 8,
     OfficialRating: "G",
-    Genres: genres,
+    Genres: genres.map(genreKey),
     DateCreated: dateCreated,
     DateLastMediaAdded: dateCreated,
     ImageTags: { Primary: "demo" },
@@ -89,7 +92,7 @@ function series(
 function season(seriesSlug: string, seriesName: string): JellyfinItem {
   return {
     Id: `demo-season-${seriesSlug}-1`,
-    Name: "Season 1",
+    Name: SEASON_ONE,
     Type: "Season",
     SeriesId: `demo-series-${seriesSlug}`,
     SeriesName: seriesName,
@@ -106,20 +109,19 @@ function episode(
   number: number,
   name: string,
   seconds: number,
-  dateCreated: string,
-  overview: string
+  dateCreated: string
 ): JellyfinItem {
   const id = `demo-ep-${slug}`;
   return {
     Id: id,
     Name: name,
     Type: "Episode",
-    Overview: overview,
+    Overview: overviewKey(id),
     RunTimeTicks: Math.round(seconds * TICKS_PER_SECOND),
     SeriesId: `demo-series-${seriesSlug}`,
     SeriesName: seriesName,
     SeasonId: `demo-season-${seriesSlug}-1`,
-    SeasonName: "Season 1",
+    SeasonName: SEASON_ONE,
     ParentIndexNumber: 1,
     IndexNumber: number,
     ParentBackdropItemId: `demo-series-${seriesSlug}`,
@@ -131,30 +133,22 @@ function episode(
 }
 
 export const DEMO_LIBRARIES: JellyfinItem[] = [
-  { Id: "demo-lib-movies", Name: "Movies", Type: "CollectionFolder" },
-  { Id: "demo-lib-series", Name: "TV Shows", Type: "CollectionFolder" },
+  { Id: "demo-lib-movies", Name: "demo.libraries.movies", Type: "CollectionFolder" },
+  { Id: "demo-lib-series", Name: "demo.libraries.series", Type: "CollectionFolder" },
 ];
 
 export const DEMO_MOVIES: JellyfinItem[] = [
-  movie("bbb", "Big Buck Bunny", 2008, 596.48, 7.6, "2026-09-01T10:00:00.0000000Z", ["Animation", "Comedy"],
-    "A gentle giant rabbit takes revenge on three mischievous rodents who have disturbed his peace."),
-  movie("sintel", "Sintel", 2010, 888.064, 7.5, "2026-09-02T10:00:00.0000000Z", ["Animation", "Fantasy"],
-    "A young woman sets out to track down the dragon that took her young friend."),
-  movie("tos", "Tears of Steel", 2012, 734.167, 6.8, "2026-09-03T10:00:00.0000000Z", ["Sci-Fi"],
-    "In a future ravaged by robots, a band of warriors and scientists tries to save the world from a mistake of the past."),
-  movie("ed", "Elephants Dream", 2006, 658.32, 6.2, "2026-09-04T10:00:00.0000000Z", ["Animation", "Surreal"],
-    "Two men explore a vast, mysterious machine, somewhere between dream and reality."),
-  movie("cosmos", "Cosmos Laundromat", 2015, 730.616, 7.1, "2026-09-05T10:00:00.0000000Z", ["Animation", "Fantasy"],
-    "Franck, a sheep on the edge, meets a strange salesman who offers him a new life."),
-  movie("spring", "Spring", 2019, 464.127, 7.9, "2026-09-06T10:00:00.0000000Z", ["Animation", "Fantasy"],
-    "A shepherd girl and her dog face ancient spirits to bring back the spring."),
+  movie("bbb", "Big Buck Bunny", 2008, 596.48, 7.6, "2026-09-01T10:00:00.0000000Z", ["animation", "comedy"]),
+  movie("sintel", "Sintel", 2010, 888.064, 7.5, "2026-09-02T10:00:00.0000000Z", ["animation", "fantasy"]),
+  movie("tos", "Tears of Steel", 2012, 734.167, 6.8, "2026-09-03T10:00:00.0000000Z", ["scifi"]),
+  movie("ed", "Elephants Dream", 2006, 658.32, 6.2, "2026-09-04T10:00:00.0000000Z", ["animation", "surreal"]),
+  movie("cosmos", "Cosmos Laundromat", 2015, 730.616, 7.1, "2026-09-05T10:00:00.0000000Z", ["animation", "fantasy"]),
+  movie("spring", "Spring", 2019, 464.127, 7.9, "2026-09-06T10:00:00.0000000Z", ["animation", "fantasy"]),
 ];
 
 export const DEMO_SERIES: JellyfinItem[] = [
-  series("caminandes", "Caminandes", 2013, "2026-09-07T10:00:00.0000000Z", ["Animation", "Comedy"],
-    "The adventures of Koro, a llama looking for food in the Patagonian snow."),
-  series("shorts", "Blender Studio Shorts", 2023, "2026-09-08T10:00:00.0000000Z", ["Animation", "Anthology"],
-    "A collection of open source animated shorts from Blender Studio."),
+  series("caminandes", "Caminandes", 2013, "2026-09-07T10:00:00.0000000Z", ["animation", "comedy"]),
+  series("shorts", "Blender Studio Shorts", 2023, "2026-09-08T10:00:00.0000000Z", ["animation", "anthology"]),
 ];
 
 export const DEMO_SEASONS: JellyfinItem[] = [
@@ -163,19 +157,10 @@ export const DEMO_SEASONS: JellyfinItem[] = [
 ];
 
 export const DEMO_EPISODES: JellyfinItem[] = [
-  episode("cam1", "caminandes", "Caminandes", 1, "Llama Drama", 90.001, "2026-09-07T10:01:00.0000000Z",
-    "Koro tries to cross a fence to reach some delicious bushes."),
-  episode("cam2", "caminandes", "Caminandes", 2, "Gran Dillama", 146.042, "2026-09-07T10:02:00.0000000Z",
-    "Koro tries to reach the grass across the road, hindered by a mischievous armadillo."),
-  episode("cam3", "caminandes", "Caminandes", 3, "Llamigos", 150.101, "2026-09-07T10:03:00.0000000Z",
-    "Koro and Oti fight over a piece of fruit in a freezing winter."),
-  episode("hero", "shorts", "Blender Studio Shorts", 1, "Hero", 236.665, "2026-09-08T10:01:00.0000000Z",
-    "Open source animated short film from Blender Studio."),
-  episode("wingit", "shorts", "Blender Studio Shorts", 2, "Wing It!", 237.937, "2026-09-08T10:02:00.0000000Z",
-    "Open source animated short film from Blender Studio."),
-  {
-    ...episode("sprite", "shorts", "Blender Studio Shorts", 3, "Sprite Fright", 629.841, "2026-09-08T10:03:00.0000000Z",
-      "Open source animated short film from Blender Studio, somewhere between comedy and thrills."),
-    OfficialRating: "PG",
-  },
+  episode("cam1", "caminandes", "Caminandes", 1, "Llama Drama", 90.001, "2026-09-07T10:01:00.0000000Z"),
+  episode("cam2", "caminandes", "Caminandes", 2, "Gran Dillama", 146.042, "2026-09-07T10:02:00.0000000Z"),
+  episode("cam3", "caminandes", "Caminandes", 3, "Llamigos", 150.101, "2026-09-07T10:03:00.0000000Z"),
+  episode("hero", "shorts", "Blender Studio Shorts", 1, "Hero", 236.665, "2026-09-08T10:01:00.0000000Z"),
+  episode("wingit", "shorts", "Blender Studio Shorts", 2, "Wing It!", 237.937, "2026-09-08T10:02:00.0000000Z"),
+  { ...episode("sprite", "shorts", "Blender Studio Shorts", 3, "Sprite Fright", 629.841, "2026-09-08T10:03:00.0000000Z"), OfficialRating: "PG" },
 ];

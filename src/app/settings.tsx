@@ -11,7 +11,6 @@ import { useAuth } from "../context/AuthContext";
 import { useTranslation, type LanguagePreference, type TranslationKey } from "../i18n";
 import { haptics } from "../lib/haptics";
 import { isDemoServerUrl } from "../services/demo/auth";
-import { DEMO_ATTRIBUTION } from "../services/demo/attribution";
 import { JellyfinService, SessionExpiredError } from "../services/jellyfin";
 
 // Labels are translation keys, resolved at render time so they follow the selected language
@@ -246,7 +245,7 @@ export default function SettingsScreen() {
         </Section>
 
         {isDemo && (
-          <Section title={t("settings.demo.title")} footer={DEMO_ATTRIBUTION}>
+          <Section title={t("settings.demo.title")} footer={t("demo.attribution")}>
             <InfoRow label={t("settings.demo.content")} value={t("settings.demo.contentValue")} />
           </Section>
         )}

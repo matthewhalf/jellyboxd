@@ -100,6 +100,37 @@ export const en = {
     invalidCredentials: "Incorrect credentials (wrong user name or password).",
     serverError: "Jellyfin server error ({status}): {details}",
   },
+  demo: {
+    libraries: { movies: "Movies", series: "TV Shows" },
+    genres: {
+      animation: "Animation",
+      comedy: "Comedy",
+      fantasy: "Fantasy",
+      scifi: "Sci-Fi",
+      surreal: "Surreal",
+      anthology: "Anthology",
+    },
+    season1: "Season 1",
+    overview: {
+      "demo-movie-bbb": "A gentle giant rabbit takes revenge on three mischievous rodents who have disturbed his peace.",
+      "demo-movie-sintel": "A young woman sets out to track down the dragon that took her young friend.",
+      "demo-movie-tos":
+        "In a future ravaged by robots, a band of warriors and scientists tries to save the world from a mistake of the past.",
+      "demo-movie-ed": "Two men explore a vast, mysterious machine, somewhere between dream and reality.",
+      "demo-movie-cosmos": "Franck, a sheep on the edge, meets a strange salesman who offers him a new life.",
+      "demo-movie-spring": "A shepherd girl and her dog face ancient spirits to bring back the spring.",
+      "demo-series-caminandes": "The adventures of Koro, a llama looking for food in the Patagonian snow.",
+      "demo-series-shorts": "A collection of open source animated shorts from Blender Studio.",
+      "demo-ep-cam1": "Koro tries to cross a fence to reach some delicious bushes.",
+      "demo-ep-cam2": "Koro tries to reach the grass across the road, hindered by a mischievous armadillo.",
+      "demo-ep-cam3": "Koro and Oti fight over a piece of fruit in a freezing winter.",
+      "demo-ep-hero": "Open source animated short film from Blender Studio.",
+      "demo-ep-wingit": "Open source animated short film from Blender Studio.",
+      "demo-ep-sprite": "Open source animated short film from Blender Studio, somewhere between comedy and thrills.",
+    },
+    attribution:
+      "Sample content: open source films from the Blender Foundation and Blender Studio. Artwork consists of frames taken from the films themselves.\n\nBig Buck Bunny (2008), Sintel (2010), Tears of Steel (2012), Caminandes: Llama Drama, Gran Dillama and Llamigos: © Blender Foundation, CC BY 3.0.\n\nElephants Dream (2006): © Blender Foundation / Netherlands Media Art Institute, CC BY 2.5.\n\nCosmos Laundromat (2015), Spring (2019), Hero, Wing It! and Sprite Fright: © Blender Foundation / Blender Studio, CC BY 4.0.\n\nLicenses: creativecommons.org/licenses/by. Jellyboxd is not affiliated with the Blender Foundation.",
+  },
   tabs: {
     home: "Home",
     series: "Series",

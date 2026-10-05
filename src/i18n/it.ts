@@ -99,6 +99,39 @@ export const it: Translations = {
     invalidCredentials: "Credenziali non corrette (username o password errati).",
     serverError: "Errore dal server Jellyfin ({status}): {details}",
   },
+  demo: {
+    libraries: { movies: "Film", series: "Serie TV" },
+    genres: {
+      animation: "Animazione",
+      comedy: "Commedia",
+      fantasy: "Fantasy",
+      scifi: "Fantascienza",
+      surreal: "Surreale",
+      anthology: "Antologia",
+    },
+    season1: "Stagione 1",
+    overview: {
+      "demo-movie-bbb":
+        "Un enorme coniglio dal cuore gentile si vendica di tre roditori dispettosi che hanno disturbato la sua quiete.",
+      "demo-movie-sintel": "Una giovane donna si mette sulle tracce del drago che le ha portato via il suo cucciolo.",
+      "demo-movie-tos":
+        "In un futuro devastato dai robot, un gruppo di guerrieri e scienziati tenta di salvare il mondo da un errore del passato.",
+      "demo-movie-ed": "Due uomini esplorano una macchina enorme e misteriosa, tra sogno e realtà.",
+      "demo-movie-cosmos":
+        "Franck, una pecora sull'orlo del baratro, incontra uno strano venditore che gli offre una nuova vita.",
+      "demo-movie-spring": "Una pastorella e il suo cane affrontano gli spiriti antichi per il ritorno della primavera.",
+      "demo-series-caminandes": "Le avventure di Koro, un lama in cerca di cibo tra la neve della Patagonia.",
+      "demo-series-shorts": "Una raccolta di cortometraggi open source dal Blender Studio.",
+      "demo-ep-cam1": "Koro cerca di attraversare un recinto per raggiungere dei deliziosi cespugli.",
+      "demo-ep-cam2": "Koro tenta di raggiungere l'erba oltre la strada, ostacolato da un armadillo dispettoso.",
+      "demo-ep-cam3": "Koro e Oti si contendono un pezzo di frutta in un inverno gelido.",
+      "demo-ep-hero": "Cortometraggio d'animazione open source del Blender Studio.",
+      "demo-ep-wingit": "Cortometraggio d'animazione open source del Blender Studio.",
+      "demo-ep-sprite": "Cortometraggio d'animazione open source del Blender Studio, tra commedia e brivido.",
+    },
+    attribution:
+      "Contenuti di esempio: film open source della Blender Foundation e del Blender Studio. Le immagini sono fotogrammi tratti dai film stessi.\n\nBig Buck Bunny (2008), Sintel (2010), Tears of Steel (2012), Caminandes: Llama Drama, Gran Dillama e Llamigos: © Blender Foundation, CC BY 3.0.\n\nElephants Dream (2006): © Blender Foundation / Netherlands Media Art Institute, CC BY 2.5.\n\nCosmos Laundromat (2015), Spring (2019), Hero, Wing It! e Sprite Fright: © Blender Foundation / Blender Studio, CC BY 4.0.\n\nLicenze: creativecommons.org/licenses/by. Jellyboxd non è affiliato alla Blender Foundation.",
+  },
   tabs: {
     home: "Home",
     series: "Serie",
