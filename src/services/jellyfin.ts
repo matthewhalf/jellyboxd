@@ -1,5 +1,6 @@
 import * as SecureStore from "expo-secure-store";
 import { Platform } from "react-native";
+import { t } from "../i18n/translate";
 import { createDemoSession, isDemoCredentials, isDemoServerUrl } from "./demo/auth";
 import { demoBackend } from "./demo/backend";
 import { DEMO_STREAMS } from "./demo/fixtures";
@@ -343,9 +344,7 @@ export class JellyfinService {
     let session: JellyfinSession = stored;
     const status = await this.checkSession(session);
     if (status === "unreachable") {
-      throw new Error(
-        `Impossibile raggiungere il server "${server.serverUrl}". Controlla che sia online e riprova.`
-      );
+      throw new Error(t("errors.unreachable", { serverUrl: server.serverUrl }));
     }
     if (status === "unauthorized") {
       // Servers behind a reverse proxy revoke tokens whenever the client's IP changes (e.g. Wi-Fi <-> mobile),
@@ -353,7 +352,7 @@ export class JellyfinService {
       const renewed = await this.renewSession(id, session);
       if (!renewed) {
         throw new SessionExpiredError(
-          `L'accesso di "${server.userName}" su ${server.serverUrl} è scaduto. Accedi di nuovo per caricare la libreria.`
+          t("errors.sessionExpired", { userName: server.userName, serverUrl: server.serverUrl })
         );
       }
       session = renewed;
@@ -418,9 +417,7 @@ export class JellyfinService {
       }
     } catch (netErr: any) {
       console.error(`[JellyfinService] Errore di rete verso ${cleanUrl}:`, netErr);
-      throw new Error(
-        `Impossibile raggiungere il server all'indirizzo ${cleanUrl}.\n\nSe il server è in esecuzione su questo computer, usa l'IP locale (es. http://192.168.1.238:8096) e non "localhost".`
-      );
+      throw new Error(t("errors.loginUnreachable", { serverUrl: cleanUrl }));
     }
 
     const session = await this.authenticate(cleanUrl, username, password);
@@ -455,11 +452,11 @@ export class JellyfinService {
 
     if (!res.ok) {
       if (res.status === 401) {
-        throw new InvalidCredentialsError("Credenziali non corrette (username o password errati).");
+        throw new InvalidCredentialsError(t("errors.invalidCredentials"));
       }
       const errText = await res.text().catch(() => "");
       console.error(`[JellyfinService] Errore login ${res.status}: ${errText}`);
-      throw new Error(`Errore dal server Jellyfin (${res.status}): ${errText || res.statusText}`);
+      throw new Error(t("errors.serverError", { status: res.status, details: errText || res.statusText }));
     }
 
     const data = await res.json();

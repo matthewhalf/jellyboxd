@@ -17,9 +17,7 @@ const path = require("path") as {
 const SRC = path.resolve(process.cwd(), "src");
 
 /** Files that still contain hand-written Italian. Each migration task removes its files from here. */
-const ITALIAN_PENDING: string[] = [
-  "services/jellyfin.ts",
-].map((f) => f.split("/").join(path.sep));
+const ITALIAN_PENDING: string[] = [];
 
 function sourceFiles(dir: string): string[] {
   return fs.readdirSync(dir, { withFileTypes: true }).flatMap((entry) => {

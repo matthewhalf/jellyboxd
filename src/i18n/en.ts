@@ -92,6 +92,14 @@ export const en = {
     failedMessage: "Unable to start the video stream.",
     itemNotFound: "Item not found",
   },
+  errors: {
+    unreachable: 'Unable to reach the server "{serverUrl}". Check that it is online and try again.',
+    sessionExpired: 'The login of "{userName}" on {serverUrl} has expired. Sign in again to load the library.',
+    loginUnreachable:
+      'Unable to reach the server at {serverUrl}.\n\nIf the server is running on this computer, use its local IP (e.g. http://192.168.1.238:8096) and not "localhost".',
+    invalidCredentials: "Incorrect credentials (wrong user name or password).",
+    serverError: "Jellyfin server error ({status}): {details}",
+  },
   tabs: {
     home: "Home",
     series: "Series",

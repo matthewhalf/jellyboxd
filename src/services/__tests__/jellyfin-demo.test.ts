@@ -38,7 +38,7 @@ describe("demo login", () => {
     jest.spyOn(console, "log").mockImplementation(() => {});
     jest.spyOn(console, "error").mockImplementation(() => {});
     await expect(JellyfinService.login("192.168.1.10:8096", "reviewer", "1test2")).rejects.toThrow(
-      /Impossibile raggiungere/
+      /Unable to reach the server/
     );
     expect(fetchMock).toHaveBeenCalled();
   });

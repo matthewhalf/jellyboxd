@@ -91,6 +91,14 @@ export const it: Translations = {
     failedMessage: "Impossibile avviare il flusso video.",
     itemNotFound: "Item non trovato",
   },
+  errors: {
+    unreachable: 'Impossibile raggiungere il server "{serverUrl}". Controlla che sia online e riprova.',
+    sessionExpired: 'L\'accesso di "{userName}" su {serverUrl} è scaduto. Accedi di nuovo per caricare la libreria.',
+    loginUnreachable:
+      'Impossibile raggiungere il server all\'indirizzo {serverUrl}.\n\nSe il server è in esecuzione su questo computer, usa l\'IP locale (es. http://192.168.1.238:8096) e non "localhost".',
+    invalidCredentials: "Credenziali non corrette (username o password errati).",
+    serverError: "Errore dal server Jellyfin ({status}): {details}",
+  },
   tabs: {
     home: "Home",
     series: "Serie",
