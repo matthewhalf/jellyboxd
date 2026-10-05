@@ -9,6 +9,8 @@ import { UserAvatar } from "../components/tv/UserAvatar";
 import { Gutter, Palette, Radius, Typography } from "../constants/theme";
 import { useAuth } from "../context/AuthContext";
 import { haptics } from "../lib/haptics";
+import { isDemoServerUrl } from "../services/demo/auth";
+import { DEMO_ATTRIBUTION } from "../services/demo/attribution";
 import { JellyfinService, SessionExpiredError } from "../services/jellyfin";
 
 const BITRATE_PRESETS = [
@@ -23,6 +25,7 @@ export default function SettingsScreen() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
   const [switchingId, setSwitchingId] = useState<string | null>(null);
+  const isDemo = session ? isDemoServerUrl(session.serverUrl) : false;
   const activeServerId = session ? `${session.serverUrl}::${session.userId}` : null;
 
   // Keyed by server id, so switching servers doesn't briefly show the previous one's info as current.
@@ -208,7 +211,7 @@ export default function SettingsScreen() {
             label="Versione Jellyfin"
             value={loadingServerInfo ? null : serverInfo?.Version || "—"}
           />
-          <InfoRow label="Indirizzo" value={session?.serverUrl || "—"} />
+          {!isDemo && <InfoRow label="Indirizzo" value={session?.serverUrl || "—"} />}
           <View style={styles.row}>
             <Text style={styles.rowLabel}>Stato</Text>
             <View style={styles.status}>
@@ -222,60 +225,70 @@ export default function SettingsScreen() {
               )}
             </View>
           </View>
-          <Pressable
-            style={({ pressed }) => [styles.row, pressed && styles.rowPressed]}
-            onPress={handleRefreshLibrary}
-            disabled={refreshingLibrary}
-          >
-            <Text style={styles.rowLabel}>Aggiorna libreria</Text>
-            {refreshingLibrary ? (
-              <ActivityIndicator size="small" color={Palette.labelSecondary} />
-            ) : (
-              <Ionicons name="refresh" size={20} color={Palette.label} />
-            )}
-          </Pressable>
+          {!isDemo && (
+            <Pressable
+              style={({ pressed }) => [styles.row, pressed && styles.rowPressed]}
+              onPress={handleRefreshLibrary}
+              disabled={refreshingLibrary}
+            >
+              <Text style={styles.rowLabel}>Aggiorna libreria</Text>
+              {refreshingLibrary ? (
+                <ActivityIndicator size="small" color={Palette.labelSecondary} />
+              ) : (
+                <Ionicons name="refresh" size={20} color={Palette.label} />
+              )}
+            </Pressable>
+          )}
         </Section>
 
-        <Section title="I tuoi server" footer="Tocca un server per passare a quell'account.">
-          {savedServers.map((server) => {
-            const isActive = server.id === activeServerId;
-            return (
-              <Pressable
-                key={server.id}
-                style={({ pressed }) => [styles.row, pressed && styles.rowPressed]}
-                onPress={() => handleSwitchServer(server)}
-                disabled={switchingId !== null}
-              >
-                <View style={styles.rowTextCol}>
-                  <Text style={styles.rowLabel}>{server.userName}</Text>
-                  <Text style={styles.rowSub} numberOfLines={1}>
-                    {server.serverUrl}
-                  </Text>
-                </View>
-                {switchingId === server.id ? (
-                  <ActivityIndicator size="small" color={Palette.labelSecondary} />
-                ) : (
-                  <View style={styles.status}>
-                    {isActive && <Ionicons name="checkmark" size={20} color={Palette.label} />}
-                    <Pressable hitSlop={10} onPress={() => handleForgetServer(server)}>
-                      <Ionicons name="trash-outline" size={18} color={Palette.labelTertiary} />
-                    </Pressable>
+        {isDemo && (
+          <Section title="Modalità demo" footer={DEMO_ATTRIBUTION}>
+            <InfoRow label="Contenuti" value="Film open source Blender" />
+          </Section>
+        )}
+
+        {!isDemo && (
+          <Section title="I tuoi server" footer="Tocca un server per passare a quell'account.">
+            {savedServers.map((server) => {
+              const isActive = server.id === activeServerId;
+              return (
+                <Pressable
+                  key={server.id}
+                  style={({ pressed }) => [styles.row, pressed && styles.rowPressed]}
+                  onPress={() => handleSwitchServer(server)}
+                  disabled={switchingId !== null}
+                >
+                  <View style={styles.rowTextCol}>
+                    <Text style={styles.rowLabel}>{server.userName}</Text>
+                    <Text style={styles.rowSub} numberOfLines={1}>
+                      {server.serverUrl}
+                    </Text>
                   </View>
-                )}
-              </Pressable>
-            );
-          })}
-          <Pressable
-            style={({ pressed }) => [styles.row, pressed && styles.rowPressed]}
-            onPress={() => {
-              haptics.light();
-              router.push("/add-server");
-            }}
-          >
-            <Text style={styles.rowLabel}>Aggiungi un altro server</Text>
-            <Ionicons name="add-circle-outline" size={20} color={Palette.label} />
-          </Pressable>
-        </Section>
+                  {switchingId === server.id ? (
+                    <ActivityIndicator size="small" color={Palette.labelSecondary} />
+                  ) : (
+                    <View style={styles.status}>
+                      {isActive && <Ionicons name="checkmark" size={20} color={Palette.label} />}
+                      <Pressable hitSlop={10} onPress={() => handleForgetServer(server)}>
+                        <Ionicons name="trash-outline" size={18} color={Palette.labelTertiary} />
+                      </Pressable>
+                    </View>
+                  )}
+                </Pressable>
+              );
+            })}
+            <Pressable
+              style={({ pressed }) => [styles.row, pressed && styles.rowPressed]}
+              onPress={() => {
+                haptics.light();
+                router.push("/add-server");
+              }}
+            >
+              <Text style={styles.rowLabel}>Aggiungi un altro server</Text>
+              <Ionicons name="add-circle-outline" size={20} color={Palette.label} />
+            </Pressable>
+          </Section>
+        )}
 
         <Section
           title="Qualità di streaming"
