@@ -10,3 +10,4 @@ export {
 } from "./translate";
 export type { Language, TranslateParams, TranslationKey } from "./translate";
 export { LanguageProvider, useTranslation } from "./LanguageProvider";
+export { formatMinutes } from "./format";

@@ -9,14 +9,16 @@ import { GridCard } from "../../../components/GridCard";
 import { Gutter, Palette, Radius, Typography } from "../../../constants/theme";
 import { useAuth } from "../../../context/AuthContext";
 import { haptics } from "../../../lib/haptics";
+import { useTranslation, type TranslationKey } from "../../../i18n";
 import { JellyfinItem, JellyfinService } from "../../../services/jellyfin";
 
 type FilterType = "ALL" | "Series" | "Movie";
 
-const FILTERS: { value: FilterType; label: string }[] = [
-  { value: "ALL", label: "Tutti" },
-  { value: "Series", label: "Serie TV" },
-  { value: "Movie", label: "Film" },
+// Labels are translation keys, resolved at render time so they follow the selected language
+const FILTERS: { value: FilterType; label: TranslationKey }[] = [
+  { value: "ALL", label: "search.all" },
+  { value: "Series", label: "series.title" },
+  { value: "Movie", label: "movies.title" },
 ];
 
 const COLUMNS = 3;
@@ -26,6 +28,7 @@ const SYSTEM_CLEAR_WINDOW_MS = 500;
 
 export default function SearchScreen() {
   const { session } = useAuth();
+  const { t } = useTranslation();
   const { width } = useWindowDimensions();
   const [query, setQuery] = useState("");
   const [filter, setFilter] = useState<FilterType>("ALL");
@@ -77,7 +80,7 @@ export default function SearchScreen() {
   const segmented = (
     <View style={styles.segmentWrap}>
       <SegmentedControl
-        values={FILTERS.map((f) => f.label)}
+        values={FILTERS.map((f) => t(f.label))}
         selectedIndex={FILTERS.findIndex((f) => f.value === filter)}
         onChange={(e) => {
           haptics.selection();
@@ -94,8 +97,8 @@ export default function SearchScreen() {
     emptyState = (
       <View style={styles.emptyContainer}>
         <Ionicons name="search" size={48} color={Palette.labelTertiary} />
-        <Text style={styles.emptyTitle}>Cerca nella tua libreria</Text>
-        <Text style={styles.emptySubtitle}>Film e serie TV disponibili sul tuo server Jellyfin</Text>
+        <Text style={styles.emptyTitle}>{t("search.emptyTitle")}</Text>
+        <Text style={styles.emptySubtitle}>{t("search.emptySubtitle")}</Text>
       </View>
     );
   } else if (isLoading) {
@@ -110,8 +113,8 @@ export default function SearchScreen() {
   } else {
     emptyState = (
       <View style={styles.emptyContainer}>
-        <Text style={styles.emptyTitle}>Nessun risultato</Text>
-        <Text style={styles.emptySubtitle}>Nessun titolo corrisponde a “{trimmed}”</Text>
+        <Text style={styles.emptyTitle}>{t("search.noResultsTitle")}</Text>
+        <Text style={styles.emptySubtitle}>{t("search.noResultsMessage", { query: trimmed })}</Text>
       </View>
     );
   }
@@ -119,7 +122,7 @@ export default function SearchScreen() {
   return (
     <View style={styles.screen}>
       <Stack.SearchBar
-        placeholder="Film, serie TV"
+        placeholder={t("search.placeholder")}
         ref={searchBarRef}
         onChangeText={(e) => {
           const text = e.nativeEvent.text;

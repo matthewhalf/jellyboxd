@@ -3,6 +3,7 @@ import React, { useEffect, useRef } from "react";
 import { Alert, Animated, Platform, Pressable, StyleProp, View, ViewStyle } from "react-native";
 import { useNativePlayer } from "../context/NativePlayerContext";
 import { usePressScale } from "../hooks/use-press-scale";
+import { useTranslation } from "../i18n";
 import { haptics } from "../lib/haptics";
 import { JellyfinItem, JellyfinService, JellyfinSession } from "../services/jellyfin";
 
@@ -29,6 +30,7 @@ interface MediaLinkProps {
 /** Actions shown by the long-press context menu of every card. */
 function useMediaActions(item: JellyfinItem, session: JellyfinSession | null, onRefresh?: () => void, seriesOnly?: boolean) {
   const router = useRouter();
+  const { t } = useTranslation();
   const { play } = useNativePlayer();
 
   const isSeries = item.Type === "Series";
@@ -58,17 +60,17 @@ function useMediaActions(item: JellyfinItem, session: JellyfinSession | null, on
 
   return {
     play: canPlay
-      ? { title: inProgress ? "Riprendi" : "Riproduci", onPress: () => play(item.Id) }
+      ? { title: inProgress ? t("menu.resume") : t("menu.play"), onPress: () => play(item.Id) }
       : isSeries && session
-        ? { title: "Riproduci", onPress: playNextEpisode }
+        ? { title: t("menu.play"), onPress: playNextEpisode }
         : null,
     goToSeries: seriesId
-      ? { title: "Vai alla serie", onPress: () => router.push(`/item/${seriesId}`) }
+      ? { title: t("menu.goToSeries"), onPress: () => router.push(`/item/${seriesId}`) }
       : null,
     togglePlayed:
       session && !isSeries && !seriesOnly
         ? {
-            title: isPlayed ? "Segna come non visto" : "Segna come visto",
+            title: isPlayed ? t("menu.markUnwatched") : t("menu.markWatched"),
             isOn: isPlayed,
             onPress: () => run(() => JellyfinService.markItemPlayed(session, item.Id, !isPlayed)),
           }
@@ -120,6 +122,7 @@ export function MediaLink({
     release();
   };
   useEffect(() => clearHold, []);
+  const { t } = useTranslation();
   const actions = useMediaActions(item, session, onRefresh, seriesOnly);
   const href = `/item/${item.Id}` as const;
 
@@ -147,7 +150,7 @@ export function MediaLink({
             haptics.heavy();
             Alert.alert(item.SeriesName || item.Name, undefined, [
               ...list.map((a) => ({ text: a.title, onPress: a.onPress })),
-              { text: "Annulla", style: "cancel" as const },
+              { text: t("common.cancel"), style: "cancel" as const },
             ]);
           }}
         >

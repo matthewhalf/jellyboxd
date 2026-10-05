@@ -23,6 +23,7 @@ import { ProgressBar } from "../../components/tv/ProgressBar";
 import { Shelf } from "../../components/tv/Shelf";
 import { Gutter, Palette, Radius, Typography } from "../../constants/theme";
 import { useAuth } from "../../context/AuthContext";
+import { formatMinutes, useTranslation } from "../../i18n";
 import { useNativePlayer, usePlaybackFinished } from "../../context/NativePlayerContext";
 import { haptics } from "../../lib/haptics";
 import {
@@ -35,13 +36,6 @@ import {
 const TICKS_PER_MINUTE = 10000000 * 60;
 const EPISODE_GAP = 14;
 
-function formatMinutes(mins: number): string {
-  if (mins < 60) return `${mins} min`;
-  const h = Math.floor(mins / 60);
-  const m = mins % 60;
-  return m > 0 ? `${h} h ${m} min` : `${h} h`;
-}
-
 function minutesLeft(item: JellyfinItem): number | null {
   const pos = item.UserData?.PlaybackPositionTicks || 0;
   if (!pos || !item.RunTimeTicks) return null;
@@ -51,6 +45,7 @@ function minutesLeft(item: JellyfinItem): number | null {
 export default function ItemDetailScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
   const { session } = useAuth();
+  const { t } = useTranslation();
   const router = useRouter();
   const { play } = useNativePlayer();
   const insets = useSafeAreaInsets();
@@ -163,7 +158,7 @@ export default function ItemDetailScreen() {
   const showLogo = !!logoId && !logoFailed;
 
   const meta = [
-    isSeries ? "Serie TV" : "Film",
+    isSeries ? t("hero.series") : t("hero.movie"),
     ...(item.Genres ?? []).slice(0, 2),
     item.ProductionYear,
   ]
@@ -177,7 +172,7 @@ export default function ItemDetailScreen() {
     playTarget?.RunTimeTicks && playTarget.UserData?.PlaybackPositionTicks
       ? (playTarget.UserData.PlaybackPositionTicks / playTarget.RunTimeTicks) * 100
       : 0;
-  let playLabel = playLeft ? "Riprendi" : "Riproduci";
+  let playLabel = playLeft ? t("menu.resume") : t("menu.play");
   if (isSeries && nextEpisode) {
     playLabel += ` S${nextEpisode.ParentIndexNumber ?? 1}, E${nextEpisode.IndexNumber ?? 1}`;
   }
@@ -190,16 +185,16 @@ export default function ItemDetailScreen() {
   const runtimeMins = item.RunTimeTicks ? Math.round(item.RunTimeTicks / TICKS_PER_MINUTE) : null;
 
   const infoRows: [string, string][] = [
-    ["Genere", item.Genres?.join(", ") ?? ""],
-    ["Anno", item.ProductionYear ? String(item.ProductionYear) : ""],
-    ["Durata", !isSeries && runtimeMins ? formatMinutes(runtimeMins) : ""],
+    [t("item.genre"), item.Genres?.join(", ") ?? ""],
+    [t("item.year"), item.ProductionYear ? String(item.ProductionYear) : ""],
+    [t("item.duration"), !isSeries && runtimeMins ? formatMinutes(runtimeMins, t) : ""],
     [
-      "Stagioni",
+      t("item.seasons"),
       isSeries && seasons.length > 0 ? String(seasons.length) : "",
     ],
-    ["Classificazione", item.OfficialRating ?? ""],
-    ["Valutazione", item.CommunityRating ? `${item.CommunityRating.toFixed(1)} / 10` : ""],
-    ["Regia", directors.map((d) => d.Name).join(", ")],
+    [t("item.contentRating"), item.OfficialRating ?? ""],
+    [t("item.rating"), item.CommunityRating ? `${item.CommunityRating.toFixed(1)} / 10` : ""],
+    [t("item.director"), directors.map((d) => d.Name).join(", ")],
   ].filter(([, value]) => value !== "") as [string, string][];
 
   const nextEpisodeIndex = episodes.findIndex((e) => e.Id === nextEpisode?.Id);
@@ -347,7 +342,7 @@ export default function ItemDetailScreen() {
               {playLeft !== null && (
                 <View style={styles.resumeRow}>
                   <ProgressBar percent={playPercent} style={styles.resumeBar} />
-                  <Text style={styles.resumeText}>{formatMinutes(playLeft)} rimasti</Text>
+                  <Text style={styles.resumeText}>{t("continueCard.timeLeft", { time: formatMinutes(playLeft, t) })}</Text>
                 </View>
               )}
             </>
@@ -361,7 +356,7 @@ export default function ItemDetailScreen() {
               <Text style={styles.overview} numberOfLines={overviewExpanded ? undefined : 3}>
                 {item.Overview}
               </Text>
-              {!overviewExpanded && <Text style={styles.moreLabel}>ALTRO</Text>}
+              {!overviewExpanded && <Text style={styles.moreLabel}>{t("item.more")}</Text>}
             </Pressable>
           )}
         </View>
@@ -401,7 +396,7 @@ export default function ItemDetailScreen() {
                 <ActivityIndicator color={Palette.label} />
               </View>
             ) : episodes.length === 0 ? (
-              <Text style={styles.emptyEpisodesText}>Nessun episodio in questa stagione.</Text>
+              <Text style={styles.emptyEpisodesText}>{t("item.noEpisodes")}</Text>
             ) : (
               <ScrollView
                 key={selectedSeasonId ?? "episodes"}
@@ -432,7 +427,7 @@ export default function ItemDetailScreen() {
 
         {cast.length > 0 && (
           <View style={!isSeries && styles.castSection}>
-            <Shelf title="Cast e troupe" gap={16}>
+            <Shelf title={t("item.castAndCrew")} gap={16}>
               {cast.map((person) => (
                 <CastMember key={person.Id} person={person} session={session} />
               ))}
@@ -442,7 +437,7 @@ export default function ItemDetailScreen() {
 
         {infoRows.length > 0 && (
           <View style={styles.infoSection}>
-            <Text style={styles.sectionTitle}>Informazioni</Text>
+            <Text style={styles.sectionTitle}>{t("item.information")}</Text>
             {infoRows.map(([label, value]) => (
               <View key={label} style={styles.infoRow}>
                 <Text style={styles.infoLabel}>{label}</Text>
@@ -471,7 +466,7 @@ export default function ItemDetailScreen() {
           hitSlop={10}
           style={styles.backButton}
           accessibilityRole="button"
-          accessibilityLabel="Indietro"
+          accessibilityLabel={t("common.back")}
         >
           <BlurView intensity={40} tint="dark" style={StyleSheet.absoluteFill} />
           <Ionicons name="chevron-back" size={22} color={Palette.label} />
@@ -502,6 +497,7 @@ function EpisodeCard({
   width: number;
   onRefresh: () => void;
 }) {
+  const { t } = useTranslation();
   const left = minutesLeft(ep);
   const isPlayed = !!ep.UserData?.Played;
   const progress = ep.UserData?.PlayedPercentage || 0;
@@ -538,8 +534,8 @@ function EpisodeCard({
       </View>
 
       <Text style={styles.episodeOverline}>
-        EPISODIO {ep.IndexNumber ?? "–"}
-        {left ? ` · ${formatMinutes(left).toUpperCase()} RIMASTI` : ""}
+        {t("item.episode", { number: ep.IndexNumber ?? "–" })}
+        {left ? t("item.episodeTimeLeft", { time: formatMinutes(left, t).toUpperCase() }) : ""}
       </Text>
       <Text style={styles.episodeTitle} numberOfLines={1}>
         {ep.Name}

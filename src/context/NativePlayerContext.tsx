@@ -4,6 +4,7 @@ import { createVideoPlayer, VideoPlayer, VideoView } from "expo-video";
 import React, { createContext, useContext, useEffect, useRef, useState } from "react";
 import { ActivityIndicator, Alert, StyleSheet, View } from "react-native";
 import { Palette, Radius } from "../constants/theme";
+import { useTranslation } from "../i18n";
 import { haptics } from "../lib/haptics";
 import { JellyfinItem, JellyfinService, JellyfinSession } from "../services/jellyfin";
 import { useAuth } from "./AuthContext";
@@ -61,6 +62,7 @@ function buildMetadata(session: JellyfinSession, item: JellyfinItem) {
  */
 export function NativePlayerProvider({ children }: { children: React.ReactNode }) {
   const { session } = useAuth();
+  const { t } = useTranslation();
   const viewRef = useRef<VideoView>(null);
   const [player, setPlayer] = useState<VideoPlayer | null>(null);
   const [isPreparing, setIsPreparing] = useState(false);
@@ -93,7 +95,7 @@ export function NativePlayerProvider({ children }: { children: React.ReactNode }
         JellyfinService.fetchItemDetails(session, itemId),
         JellyfinService.getDefaultBitrate(),
       ]);
-      if (!item) throw new Error("Item non trovato");
+      if (!item) throw new Error(t("player.itemNotFound"));
 
       const streams = item.MediaSources?.[0]?.MediaStreams || [];
       const defaults = JellyfinService.pickDefaultStreams(streams);
@@ -134,7 +136,7 @@ export function NativePlayerProvider({ children }: { children: React.ReactNode }
     } catch (e) {
       ScreenOrientation.lockAsync(ScreenOrientation.OrientationLock.PORTRAIT_UP).catch(() => {});
       console.error("Errore avvio riproduzione:", e);
-      Alert.alert("Riproduzione non riuscita", "Impossibile avviare il flusso video.");
+      Alert.alert(t("player.failedTitle"), t("player.failedMessage"));
     } finally {
       setIsPreparing(false);
     }
