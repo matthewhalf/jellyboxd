@@ -1,6 +1,6 @@
 import type { JellyfinItem, MediaSourceInfo } from "../jellyfin";
 
-const TICKS_PER_MINUTE = 600_000_000;
+const TICKS_PER_SECOND = 10_000_000;
 const ARCHIVE = "https://archive.org/download";
 
 /** Public CC-BY / public-domain Blender films. Every url answers 200 with a progressive mp4/mov that AVPlayer plays. */
@@ -36,7 +36,7 @@ function movie(
   slug: string,
   name: string,
   year: number,
-  minutes: number,
+  seconds: number,
   rating: number,
   dateCreated: string,
   genres: string[],
@@ -50,7 +50,7 @@ function movie(
     Overview: overview,
     ProductionYear: year,
     CommunityRating: rating,
-    RunTimeTicks: minutes * TICKS_PER_MINUTE,
+    RunTimeTicks: Math.round(seconds * TICKS_PER_SECOND),
     OfficialRating: "G",
     Genres: genres,
     DateCreated: dateCreated,
@@ -105,7 +105,7 @@ function episode(
   seriesName: string,
   number: number,
   name: string,
-  minutes: number,
+  seconds: number,
   dateCreated: string,
   overview: string
 ): JellyfinItem {
@@ -115,7 +115,7 @@ function episode(
     Name: name,
     Type: "Episode",
     Overview: overview,
-    RunTimeTicks: minutes * TICKS_PER_MINUTE,
+    RunTimeTicks: Math.round(seconds * TICKS_PER_SECOND),
     SeriesId: `demo-series-${seriesSlug}`,
     SeriesName: seriesName,
     SeasonId: `demo-season-${seriesSlug}-1`,
@@ -136,17 +136,17 @@ export const DEMO_LIBRARIES: JellyfinItem[] = [
 ];
 
 export const DEMO_MOVIES: JellyfinItem[] = [
-  movie("bbb", "Big Buck Bunny", 2008, 10, 7.6, "2026-09-01T10:00:00.0000000Z", ["Animazione", "Commedia"],
+  movie("bbb", "Big Buck Bunny", 2008, 596.48, 7.6, "2026-09-01T10:00:00.0000000Z", ["Animazione", "Commedia"],
     "Un enorme coniglio dal cuore gentile si vendica di tre roditori dispettosi che hanno disturbato la sua quiete."),
-  movie("sintel", "Sintel", 2010, 15, 7.5, "2026-09-02T10:00:00.0000000Z", ["Animazione", "Fantasy"],
+  movie("sintel", "Sintel", 2010, 888.064, 7.5, "2026-09-02T10:00:00.0000000Z", ["Animazione", "Fantasy"],
     "Una giovane donna si mette sulle tracce del drago che le ha portato via il suo cucciolo."),
-  movie("tos", "Tears of Steel", 2012, 12, 6.8, "2026-09-03T10:00:00.0000000Z", ["Fantascienza"],
+  movie("tos", "Tears of Steel", 2012, 734.167, 6.8, "2026-09-03T10:00:00.0000000Z", ["Fantascienza"],
     "In un futuro devastato dai robot, un gruppo di guerrieri e scienziati tenta di salvare il mondo da un errore del passato."),
-  movie("ed", "Elephants Dream", 2006, 11, 6.2, "2026-09-04T10:00:00.0000000Z", ["Animazione", "Surreale"],
+  movie("ed", "Elephants Dream", 2006, 658.32, 6.2, "2026-09-04T10:00:00.0000000Z", ["Animazione", "Surreale"],
     "Due uomini esplorano una macchina enorme e misteriosa, tra sogno e realtà."),
-  movie("cosmos", "Cosmos Laundromat", 2015, 12, 7.1, "2026-09-05T10:00:00.0000000Z", ["Animazione", "Fantasy"],
+  movie("cosmos", "Cosmos Laundromat", 2015, 730.616, 7.1, "2026-09-05T10:00:00.0000000Z", ["Animazione", "Fantasy"],
     "Franck, una pecora sull'orlo del baratro, incontra uno strano venditore che gli offre una nuova vita."),
-  movie("spring", "Spring", 2019, 8, 7.9, "2026-09-06T10:00:00.0000000Z", ["Animazione", "Fantasy"],
+  movie("spring", "Spring", 2019, 464.127, 7.9, "2026-09-06T10:00:00.0000000Z", ["Animazione", "Fantasy"],
     "Una pastorella e il suo cane affrontano gli spiriti antichi per il ritorno della primavera."),
 ];
 
@@ -163,16 +163,19 @@ export const DEMO_SEASONS: JellyfinItem[] = [
 ];
 
 export const DEMO_EPISODES: JellyfinItem[] = [
-  episode("cam1", "caminandes", "Caminandes", 1, "Llama Drama", 2, "2026-09-07T10:01:00.0000000Z",
+  episode("cam1", "caminandes", "Caminandes", 1, "Llama Drama", 90.001, "2026-09-07T10:01:00.0000000Z",
     "Koro cerca di attraversare un recinto per raggiungere dei deliziosi cespugli."),
-  episode("cam2", "caminandes", "Caminandes", 2, "Gran Dillama", 3, "2026-09-07T10:02:00.0000000Z",
+  episode("cam2", "caminandes", "Caminandes", 2, "Gran Dillama", 146.042, "2026-09-07T10:02:00.0000000Z",
     "Koro tenta di raggiungere l'erba oltre la strada, ostacolato da un armadillo dispettoso."),
-  episode("cam3", "caminandes", "Caminandes", 3, "Llamigos", 3, "2026-09-07T10:03:00.0000000Z",
+  episode("cam3", "caminandes", "Caminandes", 3, "Llamigos", 150.101, "2026-09-07T10:03:00.0000000Z",
     "Koro e Oti si contendono un pezzo di frutta in un inverno gelido."),
-  episode("hero", "shorts", "Blender Studio Shorts", 1, "Hero", 3, "2026-09-08T10:01:00.0000000Z",
-    "Un giovane eroe cerca di essere all'altezza delle aspettative del suo mondo."),
-  episode("wingit", "shorts", "Blender Studio Shorts", 2, "Wing It!", 10, "2026-09-08T10:02:00.0000000Z",
-    "Un cuoco e un piccolo animale si ritrovano coinvolti in una folle impresa."),
-  episode("sprite", "shorts", "Blender Studio Shorts", 3, "Sprite Fright", 11, "2026-09-08T10:03:00.0000000Z",
-    "Un gruppo di amici incontra delle creature misteriose nel bosco."),
+  episode("hero", "shorts", "Blender Studio Shorts", 1, "Hero", 236.665, "2026-09-08T10:01:00.0000000Z",
+    "Cortometraggio d'animazione open source del Blender Studio."),
+  episode("wingit", "shorts", "Blender Studio Shorts", 2, "Wing It!", 237.937, "2026-09-08T10:02:00.0000000Z",
+    "Cortometraggio d'animazione open source del Blender Studio."),
+  {
+    ...episode("sprite", "shorts", "Blender Studio Shorts", 3, "Sprite Fright", 629.841, "2026-09-08T10:03:00.0000000Z",
+      "Cortometraggio d'animazione open source del Blender Studio, tra commedia e brivido."),
+    OfficialRating: "PG",
+  },
 ];

@@ -60,6 +60,36 @@ describe("demo fixtures", () => {
   });
 });
 
+/** Durations measured with ffprobe on the streams in DEMO_STREAMS, in seconds. */
+const MEASURED_SECONDS: Record<string, number> = {
+  "demo-movie-bbb": 596.48,
+  "demo-movie-sintel": 888.064,
+  "demo-movie-tos": 734.167,
+  "demo-movie-ed": 658.32,
+  "demo-movie-cosmos": 730.616,
+  "demo-movie-spring": 464.127,
+  "demo-ep-cam1": 90.001,
+  "demo-ep-cam2": 146.042,
+  "demo-ep-cam3": 150.101,
+  "demo-ep-hero": 236.665,
+  "demo-ep-wingit": 237.937,
+  "demo-ep-sprite": 629.841,
+};
+
+describe("demo runtimes", () => {
+  it("match the real duration of each stream, so progress and 'continue watching' are right", () => {
+    for (const item of [...DEMO_MOVIES, ...DEMO_EPISODES]) {
+      const seconds = (item.RunTimeTicks ?? 0) / 10_000_000;
+      expect(seconds).toBeCloseTo(MEASURED_SECONDS[item.Id], 0);
+    }
+  });
+
+  it("does not rate the horror-tinged Sprite Fright as G", () => {
+    const sprite = DEMO_EPISODES.find((e) => e.Id === "demo-ep-sprite");
+    expect(sprite?.OfficialRating).toBe("PG");
+  });
+});
+
 describe("demoImageUrl", () => {
   afterEach(() => jest.restoreAllMocks());
 
