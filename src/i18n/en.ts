@@ -6,6 +6,15 @@ export const en = {
     cancel: "Cancel",
     back: "Back",
   },
+  tabs: {
+    home: "Home",
+    series: "Series",
+    movies: "Movies",
+    search: "Search",
+  },
+  library: {
+    title: "Library",
+  },
   settings: {
     language: {
       title: "Language",

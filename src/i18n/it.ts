@@ -5,6 +5,15 @@ export const it: Translations = {
     cancel: "Annulla",
     back: "Indietro",
   },
+  tabs: {
+    home: "Home",
+    series: "Serie",
+    movies: "Film",
+    search: "Cerca",
+  },
+  library: {
+    title: "Libreria",
+  },
   settings: {
     language: {
       title: "Lingua",
