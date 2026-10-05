@@ -1,0 +1,5 @@
+{
+  "ios": {
+    "NSLocalNetworkUsageDescription": "Jellyboxd uses the local network to connect to your Jellyfin server, for example a computer or NAS at home."
+  }
+}

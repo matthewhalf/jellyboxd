@@ -20,7 +20,8 @@
           "NSAllowsArbitraryLoads": true
         },
         "ITSAppUsesNonExemptEncryption": false,
-        "NSLocalNetworkUsageDescription": "Jellyboxd usa la rete locale per collegarsi al tuo server Jellyfin, ad esempio un computer o un NAS di casa."
+        "NSLocalNetworkUsageDescription": "Jellyboxd uses the local network to connect to your Jellyfin server, for example a computer or NAS at home.",
+        "CFBundleAllowMixedLocalizations": true
       },
       "privacyManifests": {
         "NSPrivacyAccessedAPITypes": [
@@ -79,6 +80,10 @@
     },
     "updates": {
       "url": "https://u.expo.dev/ff5aaf39-4a4f-4c55-9789-d13673163c53"
+    },
+    "locales": {
+      "en": "./locales/en.json",
+      "it": "./locales/it.json"
     }
   }
 }
