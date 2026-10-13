@@ -41,7 +41,7 @@ export default function AddServerScreen() {
       >
         <Text style={styles.subtitle}>{t("addServer.subtitle")}</Text>
 
-        <ServerLoginForm submitLabel={t("login.signIn")} onSuccess={() => router.back()} />
+        <ServerLoginForm submitLabel={t("login.signIn")} onSuccess={() => router.back()} showNameField />
       </ScrollView>
     </KeyboardAvoidingView>
   );

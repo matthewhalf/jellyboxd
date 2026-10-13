@@ -8,12 +8,15 @@ import { useTranslation } from "../i18n";
 interface ServerLoginFormProps {
   submitLabel?: string;
   onSuccess?: () => void;
+  /** Shows an optional "server name" field, for adding a further server. */
+  showNameField?: boolean;
 }
 
 /** Server URL + credentials fields and submit button, shared by the first-time login screen and "add server". */
-export function ServerLoginForm({ submitLabel, onSuccess }: ServerLoginFormProps) {
+export function ServerLoginForm({ submitLabel, onSuccess, showNameField }: ServerLoginFormProps) {
   const { login } = useAuth();
   const { t } = useTranslation();
+  const [name, setName] = useState("");
   const [serverUrl, setServerUrl] = useState("");
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
@@ -28,7 +31,7 @@ export function ServerLoginForm({ submitLabel, onSuccess }: ServerLoginFormProps
 
     setIsLoading(true);
     try {
-      await login(serverUrl.trim(), username.trim(), password);
+      await login(serverUrl.trim(), username.trim(), password, showNameField ? name : undefined);
       onSuccess?.();
     } catch (err: any) {
       Alert.alert(t("login.failedTitle"), err.message || t("login.failedMessage"));
@@ -40,6 +43,20 @@ export function ServerLoginForm({ submitLabel, onSuccess }: ServerLoginFormProps
   return (
     <>
       <View style={styles.fieldGroup}>
+        {showNameField && (
+          <>
+            <TextInput
+              style={styles.input}
+              placeholder={t("login.namePlaceholder")}
+              placeholderTextColor={Palette.labelTertiary}
+              value={name}
+              onChangeText={setName}
+              maxLength={40}
+              selectionColor={Palette.label}
+            />
+            <View style={styles.divider} />
+          </>
+        )}
         <TextInput
           style={styles.input}
           placeholder={t("login.serverPlaceholder")}

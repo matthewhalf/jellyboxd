@@ -5,13 +5,20 @@ import { useRouter } from "expo-router";
 import React, { useEffect, useState } from "react";
 import { ActivityIndicator, Alert, Animated, Pressable, StyleSheet, Text, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
+import { RenameServerModal } from "../components/RenameServerModal";
 import { UserAvatar } from "../components/tv/UserAvatar";
 import { Gutter, Palette, Radius, Typography } from "../constants/theme";
 import { useAuth } from "../context/AuthContext";
 import { useTranslation, type LanguagePreference, type TranslationKey } from "../i18n";
 import { haptics } from "../lib/haptics";
 import { isDemoServerUrl } from "../services/demo/auth";
-import { JellyfinService, SessionExpiredError } from "../services/jellyfin";
+import {
+  JellyfinService,
+  SavedServer,
+  SessionExpiredError,
+  savedServerLabel,
+  savedServerSubtitle,
+} from "../services/jellyfin";
 
 // Labels are translation keys, resolved at render time so they follow the selected language
 const BITRATE_PRESETS: { bitrate: number; label: TranslationKey; sub: TranslationKey }[] = [
@@ -24,7 +31,8 @@ const BITRATE_PRESETS: { bitrate: number; label: TranslationKey; sub: Translatio
 const LANGUAGE_OPTIONS: LanguagePreference[] = ["system", "en", "it"];
 
 export default function SettingsScreen() {
-  const { session, savedServers, switchServer, forgetServer, logout } = useAuth();
+  const { session, savedServers, switchServer, forgetServer, renameServer, logout } = useAuth();
+  const [renaming, setRenaming] = useState<SavedServer | null>(null);
   const { t, preference, deviceLanguage, setPreference } = useTranslation();
   const router = useRouter();
   const insets = useSafeAreaInsets();
@@ -163,6 +171,24 @@ export default function SettingsScreen() {
     );
   };
 
+  const handleRenameServer = (server: SavedServer) => {
+    haptics.light();
+    setRenaming(server);
+  };
+
+  const handleSaveName = async (name: string) => {
+    if (!renaming) return;
+    const id = renaming.id;
+    setRenaming(null);
+    try {
+      await renameServer(id, name);
+      haptics.success();
+    } catch {
+      haptics.error();
+      Alert.alert(t("common.error"), t("settings.rename.failedMessage"));
+    }
+  };
+
   const handleLogout = () => {
     haptics.medium();
     Alert.alert(t("settings.logout.title"), t("settings.logout.message", { userName: session?.userName ?? "" }), [
@@ -199,7 +225,9 @@ export default function SettingsScreen() {
                 {session.userName}
               </Text>
               <Text style={styles.profileSub} numberOfLines={1}>
-                {serverInfo?.ServerName || session.serverUrl}
+                {savedServers.find((s) => s.id === activeServerId)?.name ||
+                  serverInfo?.ServerName ||
+                  session.serverUrl}
               </Text>
             </View>
           </View>
@@ -252,9 +280,7 @@ export default function SettingsScreen() {
 
         {!isDemo && (
           <Section title={t("settings.servers.title")} footer={t("settings.servers.footer")}>
-            {savedServers.map((server) => {
-              const isActive = server.id === activeServerId;
-              return (
+            {savedServers.map((server) => (
                 <Pressable
                   key={server.id}
                   style={({ pressed }) => [styles.row, pressed && styles.rowPressed]}
@@ -262,24 +288,32 @@ export default function SettingsScreen() {
                   disabled={switchingId !== null}
                 >
                   <View style={styles.rowTextCol}>
-                    <Text style={styles.rowLabel}>{server.userName}</Text>
+                    <Text style={styles.rowLabel} numberOfLines={1}>
+                      {savedServerLabel(server)}
+                    </Text>
                     <Text style={styles.rowSub} numberOfLines={1}>
-                      {server.serverUrl}
+                      {savedServerSubtitle(server)}
                     </Text>
                   </View>
                   {switchingId === server.id ? (
                     <ActivityIndicator size="small" color={Palette.labelSecondary} />
                   ) : (
                     <View style={styles.status}>
-                      {isActive && <Ionicons name="checkmark" size={20} color={Palette.label} />}
+                      <Pressable
+                        hitSlop={10}
+                        onPress={() => handleRenameServer(server)}
+                        accessibilityRole="button"
+                        accessibilityLabel={t("settings.rename.title")}
+                      >
+                        <Ionicons name="pencil-outline" size={18} color={Palette.labelTertiary} />
+                      </Pressable>
                       <Pressable hitSlop={10} onPress={() => handleForgetServer(server)}>
                         <Ionicons name="trash-outline" size={18} color={Palette.labelTertiary} />
                       </Pressable>
                     </View>
                   )}
                 </Pressable>
-              );
-            })}
+            ))}
             <Pressable
               style={({ pressed }) => [styles.row, pressed && styles.rowPressed]}
               onPress={() => {
@@ -400,6 +434,7 @@ export default function SettingsScreen() {
           <Ionicons name="chevron-back" size={22} color={Palette.label} />
         </Pressable>
       </View>
+      <RenameServerModal server={renaming} onCancel={() => setRenaming(null)} onSave={handleSaveName} />
     </View>
   );
 }

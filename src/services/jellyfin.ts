@@ -19,6 +19,18 @@ export interface JellyfinSession {
 export interface SavedServer extends JellyfinSession {
   /** Stable key: serverUrl + userId, since the same server can have several saved users. */
   id: string;
+  /** Optional label chosen by the user; the UI falls back to the user name when it's missing. */
+  name?: string;
+}
+
+/** What to show as a saved server's title: its custom name, or the account it logs into. */
+export function savedServerLabel(server: SavedServer): string {
+  return server.name || server.userName;
+}
+
+/** Secondary line under a saved server's title: the account is only repeated when a custom name hides it. */
+export function savedServerSubtitle(server: SavedServer): string {
+  return server.name ? `${server.userName} · ${server.serverUrl}` : server.serverUrl;
 }
 
 export interface MediaStreamInfo {
@@ -30,6 +42,8 @@ export interface MediaStreamInfo {
   Index: number;
   IsDefault?: boolean;
   IsForced?: boolean;
+  /** Set by Jellyfin for subtitles it can convert to WebVTT (SRT, ASS, ...), unlike image-based ones (PGS, VobSub). */
+  IsTextSubtitleStream?: boolean;
   Width?: number;
   Height?: number;
   VideoRange?: string;
@@ -39,6 +53,13 @@ export interface MediaStreamInfo {
   BitRate?: number;
   AudioSpatialFormat?: string;
 }
+
+/**
+ * How Jellyfin delivers subtitles in the HLS stream. "Hls" lists every text subtitle in the manifest,
+ * so the iOS player shows them in its own subtitles menu; "Encode" burns a single one into the video.
+ * (Left out, master.m3u8 defaults to "External" and the player never sees any subtitle.)
+ */
+export type SubtitleMethod = "Hls" | "Encode";
 
 export interface MediaSourceInfo {
   Id: string;
@@ -297,7 +318,21 @@ export class JellyfinService {
   static async upsertSavedServer(session: JellyfinSession): Promise<SavedServer[]> {
     const id = savedServerId(session);
     const existing = await this.getSavedServers();
-    const next = [{ ...session, id }, ...existing.filter((s) => s.id !== id)];
+    const { name } = existing.find((s) => s.id === id) ?? {};
+    const next = [{ ...session, id, ...(name ? { name } : {}) }, ...existing.filter((s) => s.id !== id)];
+    await SecureStore.setItemAsync(STORAGE_KEYS.SAVED_SERVERS, JSON.stringify(next));
+    return next;
+  }
+
+  /** Sets the custom name of a saved server; a blank name removes it. */
+  static async renameSavedServer(id: string, name: string): Promise<SavedServer[]> {
+    const trimmed = name.trim();
+    const existing = await this.getSavedServers();
+    const next = existing.map((s) => {
+      if (s.id !== id) return s;
+      const { name: _old, ...rest } = s;
+      return trimmed ? { ...rest, name: trimmed } : rest;
+    });
     await SecureStore.setItemAsync(STORAGE_KEYS.SAVED_SERVERS, JSON.stringify(next));
     return next;
   }
@@ -340,7 +375,7 @@ export class JellyfinService {
   static async switchToSavedServer(server: SavedServer): Promise<JellyfinSession> {
     await this.initDeviceId();
 
-    const { id, ...stored } = server;
+    const { id, name: _name, ...stored } = server;
     let session: JellyfinSession = stored;
     const status = await this.checkSession(session);
     if (status === "unreachable") {
@@ -394,7 +429,8 @@ export class JellyfinService {
   static async login(
     rawServerUrl: string,
     username: string,
-    password: string
+    password: string,
+    name?: string
   ): Promise<JellyfinSession> {
     // Review credentials documented in docs/store/review-notes.md: an in-memory session, nothing persisted
     if (isDemoCredentials(rawServerUrl, username, password)) {
@@ -425,7 +461,9 @@ export class JellyfinService {
     console.log(`[JellyfinService] Login completato per ${session.userName} (${session.userId})`);
     await Promise.all([
       this.saveSession(session),
-      this.upsertSavedServer(session),
+      this.upsertSavedServer(session).then(() =>
+        name?.trim() ? this.renameSavedServer(savedServerId(session), name) : undefined
+      ),
       // Remembered so an expired token can be renewed silently when switching back to this server
       SecureStore.setItemAsync(passwordKey(savedServerId(session)), password).catch(() => {}),
     ]);
@@ -586,6 +624,7 @@ export class JellyfinService {
     options?: {
       audioStreamIndex?: number;
       subtitleStreamIndex?: number;
+      subtitleMethod?: SubtitleMethod;
       maxStreamingBitrate?: number;
     }
   ): string {
@@ -596,6 +635,9 @@ export class JellyfinService {
     }
     if (options?.subtitleStreamIndex !== undefined) {
       url += `&SubtitleStreamIndex=${options.subtitleStreamIndex}`;
+    }
+    if (options?.subtitleMethod) {
+      url += `&SubtitleMethod=${options.subtitleMethod}`;
     }
     if (options?.maxStreamingBitrate && options.maxStreamingBitrate > 0) {
       url += `&MaxStreamingBitrate=${options.maxStreamingBitrate}&VideoCodec=h264,hevc&AudioCodec=aac,mp3,ac3,eac3`;
@@ -924,11 +966,16 @@ export class JellyfinService {
   static pickDefaultStreams(streams: MediaStreamInfo[]): {
     audioStreamIndex?: number;
     subtitleStreamIndex: number;
+    subtitleMethod: SubtitleMethod;
   } {
     const audio =
       streams.find((s) => s.Type === "Audio" && s.IsDefault) || streams.find((s) => s.Type === "Audio");
     const subtitle = streams.find((s) => s.Type === "Subtitle" && s.IsDefault);
-    return { audioStreamIndex: audio?.Index, subtitleStreamIndex: subtitle ? subtitle.Index : -1 };
+    // Image-based subtitles can't go in the HLS manifest, so a default one is burned into the video instead
+    if (subtitle && !subtitle.IsTextSubtitleStream) {
+      return { audioStreamIndex: audio?.Index, subtitleStreamIndex: subtitle.Index, subtitleMethod: "Encode" };
+    }
+    return { audioStreamIndex: audio?.Index, subtitleStreamIndex: subtitle ? subtitle.Index : -1, subtitleMethod: "Hls" };
   }
 
   static async fetchServerInfo(session: JellyfinSession): Promise<{

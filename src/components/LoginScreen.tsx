@@ -16,7 +16,7 @@ import { Gutter, Palette, Radius, Typography } from "../constants/theme";
 import { useAuth } from "../context/AuthContext";
 import { useTranslation } from "../i18n";
 import { haptics } from "../lib/haptics";
-import { SavedServer } from "../services/jellyfin";
+import { SavedServer, savedServerLabel, savedServerSubtitle } from "../services/jellyfin";
 import { ServerLoginForm } from "./ServerLoginForm";
 
 export const LoginScreen: React.FC = () => {
@@ -86,10 +86,10 @@ export const LoginScreen: React.FC = () => {
                   </View>
                   <View style={styles.savedTextCol}>
                     <Text style={styles.savedName} numberOfLines={1}>
-                      {server.userName}
+                      {savedServerLabel(server)}
                     </Text>
                     <Text style={styles.savedSub} numberOfLines={1}>
-                      {server.serverUrl}
+                      {savedServerSubtitle(server)}
                     </Text>
                   </View>
                   {switchingId === server.id ? (

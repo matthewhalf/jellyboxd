@@ -103,6 +103,7 @@ export function NativePlayerProvider({ children }: { children: React.ReactNode }
       const uri = JellyfinService.getStreamUrl(session.serverUrl, itemId, session.token, {
         audioStreamIndex: defaults.audioStreamIndex,
         subtitleStreamIndex: defaults.subtitleStreamIndex,
+        subtitleMethod: defaults.subtitleMethod,
         maxStreamingBitrate: bitrate,
       });
 

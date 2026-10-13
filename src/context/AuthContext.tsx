@@ -6,11 +6,14 @@ interface AuthContextType {
   isLoading: boolean;
   /** Remembered logins (this one included, once authenticated), most recently used first. */
   savedServers: SavedServer[];
-  login: (serverUrl: string, username: string, password: string) => Promise<void>;
+  /** `name` is an optional custom label for the saved server. */
+  login: (serverUrl: string, username: string, password: string, name?: string) => Promise<void>;
   /** Switches the active session to an already-saved server, instantly (reuses its stored token). */
   switchServer: (server: SavedServer) => Promise<void>;
   /** Forgets a saved server; if it's the active one, this also logs out. */
   forgetServer: (id: string) => Promise<void>;
+  /** Sets a saved server's custom name; a blank name goes back to the default label. */
+  renameServer: (id: string, name: string) => Promise<void>;
   logout: () => Promise<void>;
 }
 
@@ -21,6 +24,7 @@ const AuthContext = createContext<AuthContextType>({
   login: async () => {},
   switchServer: async () => {},
   forgetServer: async () => {},
+  renameServer: async () => {},
   logout: async () => {},
 });
 
@@ -38,8 +42,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       .finally(() => setIsLoading(false));
   }, []);
 
-  const login = async (serverUrl: string, username: string, password: string) => {
-    const newSession = await JellyfinService.login(serverUrl, username, password);
+  const login = async (serverUrl: string, username: string, password: string, name?: string) => {
+    const newSession = await JellyfinService.login(serverUrl, username, password, name);
     setSession(newSession);
     setSavedServers(await JellyfinService.getSavedServers());
   };
@@ -60,6 +64,10 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     }
   };
 
+  const renameServer = async (id: string, name: string) => {
+    setSavedServers(await JellyfinService.renameSavedServer(id, name));
+  };
+
   const logout = async () => {
     await JellyfinService.clearSession();
     setSession(null);
@@ -67,7 +75,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
   return (
     <AuthContext.Provider
-      value={{ session, isLoading, savedServers, login, switchServer, forgetServer, logout }}
+      value={{ session, isLoading, savedServers, login, switchServer, forgetServer, renameServer, logout }}
     >
       {children}
     </AuthContext.Provider>

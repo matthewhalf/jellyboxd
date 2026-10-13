@@ -24,6 +24,7 @@ export const en = {
     serverPlaceholder: "Server address (e.g. http://192.168.1.10:8096)",
     usernamePlaceholder: "User name",
     passwordPlaceholder: "Password",
+    namePlaceholder: "Name (optional, e.g. Home)",
   },
   addServer: {
     title: "Add server",
@@ -176,6 +177,13 @@ export const en = {
       message: 'Forget the login for "{userName}" on {serverUrl}?',
       confirm: "Remove",
     },
+    rename: {
+      title: "Rename server",
+      message: "{userName} on {serverUrl}",
+      placeholder: "Server name",
+      save: "Save",
+      failedMessage: "Unable to save the name.",
+    },
     logout: {
       title: "Sign out",
       message: "Do you want to sign out of the account {userName}?",
@@ -191,7 +199,7 @@ export const en = {
     },
     servers: {
       title: "Your servers",
-      footer: "Tap a server to switch to that account.",
+      footer: "Tap a server to switch to that account. Use the pencil to give it a name.",
       add: "Add another server",
     },
     streaming: {

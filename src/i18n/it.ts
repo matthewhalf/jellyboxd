@@ -23,6 +23,7 @@ export const it: Translations = {
     serverPlaceholder: "Indirizzo server (es. http://192.168.1.10:8096)",
     usernamePlaceholder: "Nome utente",
     passwordPlaceholder: "Password",
+    namePlaceholder: "Nome (facoltativo, es. Casa)",
   },
   addServer: {
     title: "Aggiungi server",
@@ -177,6 +178,13 @@ export const it: Translations = {
       message: 'Dimenticare l\'accesso a "{userName}" su {serverUrl}?',
       confirm: "Rimuovi",
     },
+    rename: {
+      title: "Rinomina server",
+      message: "{userName} su {serverUrl}",
+      placeholder: "Nome del server",
+      save: "Salva",
+      failedMessage: "Impossibile salvare il nome.",
+    },
     logout: {
       title: "Disconnessione",
       message: "Vuoi disconnetterti dall'account {userName}?",
@@ -192,7 +200,7 @@ export const it: Translations = {
     },
     servers: {
       title: "I tuoi server",
-      footer: "Tocca un server per passare a quell'account.",
+      footer: "Tocca un server per passare a quell'account. Usa la matita per dargli un nome.",
       add: "Aggiungi un altro server",
     },
     streaming: {
