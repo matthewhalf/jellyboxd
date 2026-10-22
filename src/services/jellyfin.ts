@@ -787,7 +787,7 @@ export class JellyfinService {
   ): Promise<JellyfinItem | null> {
     if (isDemoServerUrl(session.serverUrl)) return demoBackend.nextUpForSeries(seriesId);
     try {
-      const url = `${session.serverUrl}/Shows/NextUp?seriesId=${seriesId}&userId=${session.userId}&Limit=1&Fields=Overview,RunTimeTicks,UserData,ParentBackdropItemId,SeriesId,SeriesName`;
+      const url = `${session.serverUrl}/Shows/NextUp?seriesId=${seriesId}&userId=${session.userId}&Limit=1&Fields=Overview,RunTimeTicks,UserData,ParentBackdropItemId,SeriesId,SeriesName,MediaSources`;
       const res = await this.fetchWithTimeoutAndRetry(url, {
         headers: this.getAuthHeaders(session.token),
       });
