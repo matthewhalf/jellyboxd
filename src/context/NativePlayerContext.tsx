@@ -63,6 +63,11 @@ function buildMetadata(session: JellyfinSession, item: JellyfinItem) {
 export function NativePlayerProvider({ children }: { children: React.ReactNode }) {
   const { session } = useAuth();
   const { t } = useTranslation();
+  // Read from native event handlers, which subscribe once per player
+  const tRef = useRef(t);
+  useEffect(() => {
+    tRef.current = t;
+  });
   const viewRef = useRef<VideoView>(null);
   const [player, setPlayer] = useState<VideoPlayer | null>(null);
   const [isPreparing, setIsPreparing] = useState(false);
@@ -203,8 +208,18 @@ export function NativePlayerProvider({ children }: { children: React.ReactNode }
 
     const subscriptions = [
       player.addListener("sourceLoad", seekToResume),
-      player.addListener("statusChange", ({ status }) => {
+      player.addListener("statusChange", ({ status, error }) => {
         if (status === "readyToPlay") seekToResume();
+        if (status === "error" && !finishingRef.current) {
+          // e.g. the server's transcode failed: close the player instead of leaving it stuck
+          console.error("Errore riproduzione:", error?.message);
+          if (isFullscreenRef.current) {
+            viewRef.current?.exitFullscreen().catch(finish);
+          } else {
+            finish();
+          }
+          Alert.alert(tRef.current("player.failedTitle"), tRef.current("player.failedMessage"));
+        }
       }),
       player.addListener("timeUpdate", ({ currentTime }) => {
         const s = sessionRef.current;

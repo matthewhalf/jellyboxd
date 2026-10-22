@@ -162,6 +162,11 @@ export type JellyfinImageType = "Primary" | "Backdrop" | "Thumb" | "Logo";
 const HOME_ITEM_FIELDS =
   "Overview,RunTimeTicks,UserData,ParentBackdropItemId,SeriesId,SeriesName,Genres,OfficialRating,ProductionYear,CommunityRating";
 
+/** Audio codecs AVPlayer decodes from HLS; anything else (TrueHD, DTS…) is transcoded to the first one. */
+const HLS_AUDIO_CODECS = "aac,ac3,eac3,mp3";
+/** HEVC dynamic ranges iPhones play natively, so Jellyfin can copy them without tone mapping. */
+const HEVC_RANGE_TYPES = "SDR,HDR10,HDR10Plus,HLG,DOVI,DOVIWithHDR10,DOVIWithHLG,DOVIWithSDR";
+
 export class JellyfinService {
   /** Identifies this installation; the DeviceId actually sent is derived from it per server address. */
   private static installDeviceId = "jellyboxd-" + (Platform.OS === "ios" ? "ios" : "android");
@@ -639,8 +644,18 @@ export class JellyfinService {
     if (options?.subtitleMethod) {
       url += `&SubtitleMethod=${options.subtitleMethod}`;
     }
-    if (options?.maxStreamingBitrate && options.maxStreamingBitrate > 0) {
-      url += `&MaxStreamingBitrate=${options.maxStreamingBitrate}&VideoCodec=h264,hevc&AudioCodec=aac,mp3,ac3,eac3`;
+    // AVPlayer only plays HEVC (and so HDR / Dolby Vision) from fMP4 segments: in the default
+    // MPEG-TS ones the video track is silently dropped and only the audio plays
+    url += `&SegmentContainer=mp4&AudioCodec=${HLS_AUDIO_CODECS}`;
+    const bitrate = options?.maxStreamingBitrate ?? 0;
+    if (bitrate > 0) {
+      // Capped quality: a full transcode to SDR H.264, scaled down to the preset's resolution
+      const height = bitrate >= 8000000 ? 1080 : bitrate >= 3000000 ? 720 : 480;
+      url += `&MaxStreamingBitrate=${bitrate}&VideoCodec=h264&h264-videorangetype=SDR`;
+      url += `&MaxWidth=${Math.round((height * 16) / 9)}&MaxHeight=${height}`;
+    } else {
+      // Direct Play: the video is copied as is whenever iOS can decode it
+      url += `&VideoCodec=hevc,h264&AllowVideoStreamCopy=true&hevc-videorangetype=${HEVC_RANGE_TYPES}`;
     }
     return url;
   }
