@@ -5,6 +5,7 @@ import React, { createContext, useContext, useEffect, useRef, useState } from "r
 import { ActivityIndicator, Alert, StyleSheet, View } from "react-native";
 import { Palette, Radius } from "../constants/theme";
 import { useTranslation } from "../i18n";
+import { enterFullscreenWithRetry } from "../lib/fullscreen";
 import { haptics } from "../lib/haptics";
 import { JellyfinItem, JellyfinService, JellyfinSession } from "../services/jellyfin";
 import { useAuth } from "./AuthContext";
@@ -253,14 +254,15 @@ export function NativePlayerProvider({ children }: { children: React.ReactNode }
 
     // Present fullscreen as soon as the view is mounted; retried because the
     // native view may not be attached to the window on the first frame.
-    const enter = () => {
-      if (!isFullscreenRef.current) viewRef.current?.enterFullscreen().catch(() => {});
-    };
-    const timers = [0, 150, 400, 800].map((delay) => setTimeout(enter, delay));
+    let cancelled = false;
+    enterFullscreenWithRetry(
+      () => viewRef.current?.enterFullscreen(),
+      () => cancelled || isFullscreenRef.current || playerRef.current !== player
+    );
 
     return () => {
       subscriptions.forEach((sub) => sub.remove());
-      timers.forEach(clearTimeout);
+      cancelled = true;
     };
   }, [player]);
 
