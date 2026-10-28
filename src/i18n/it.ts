@@ -86,6 +86,7 @@ export const it: Translations = {
     goToSeries: "Vai alla serie",
     markWatched: "Segna come visto",
     markUnwatched: "Segna come non visto",
+    removeFromContinueWatching: "Rimuovi da Continua a guardare",
   },
   player: {
     failedTitle: "Riproduzione non riuscita",

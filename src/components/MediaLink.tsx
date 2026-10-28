@@ -18,6 +18,8 @@ interface MediaLinkProps {
   seriesOnly?: boolean;
   /** Tap starts playback instead of opening the detail page (continue watching, episodes). */
   playOnPress?: boolean;
+  /** Card of the continue watching row: offers removing it from there. */
+  continueWatching?: boolean;
   /** The artwork: source view of the iOS zoom transition into the detail page. */
   children: React.ReactNode;
   /** Content below the artwork (titles), outside the zoom source. */
@@ -28,7 +30,13 @@ interface MediaLinkProps {
 }
 
 /** Actions shown by the long-press context menu of every card. */
-function useMediaActions(item: JellyfinItem, session: JellyfinSession | null, onRefresh?: () => void, seriesOnly?: boolean) {
+function useMediaActions(
+  item: JellyfinItem,
+  session: JellyfinSession | null,
+  onRefresh?: () => void,
+  seriesOnly?: boolean,
+  continueWatching?: boolean
+) {
   const router = useRouter();
   const { t } = useTranslation();
   const { play } = useNativePlayer();
@@ -75,6 +83,13 @@ function useMediaActions(item: JellyfinItem, session: JellyfinSession | null, on
             onPress: () => run(() => JellyfinService.markItemPlayed(session, item.Id, !isPlayed)),
           }
         : null,
+    removeFromContinueWatching:
+      session && continueWatching
+        ? {
+            title: t("menu.removeFromContinueWatching"),
+            onPress: () => run(() => JellyfinService.hideFromContinueWatching(session, item)),
+          }
+        : null,
   };
 }
 
@@ -90,6 +105,7 @@ export function MediaLink({
   onRefresh,
   seriesOnly,
   playOnPress,
+  continueWatching,
   children,
   footer,
   zoom = !playOnPress,
@@ -123,7 +139,7 @@ export function MediaLink({
   };
   useEffect(() => clearHold, []);
   const { t } = useTranslation();
-  const actions = useMediaActions(item, session, onRefresh, seriesOnly);
+  const actions = useMediaActions(item, session, onRefresh, seriesOnly, continueWatching);
   const href = `/item/${item.Id}` as const;
 
   const handlePress = () => {
@@ -135,7 +151,7 @@ export function MediaLink({
   };
 
   if (Platform.OS !== "ios") {
-    const list = [actions.play, actions.goToSeries, actions.togglePlayed].filter(Boolean) as {
+    const list = [actions.play, actions.goToSeries, actions.togglePlayed, actions.removeFromContinueWatching].filter(Boolean) as {
       title: string;
       onPress: () => void;
     }[];
@@ -197,6 +213,14 @@ export function MediaLink({
               title={actions.togglePlayed.title}
               icon={actions.togglePlayed.isOn ? "eye.slash" : "checkmark.circle"}
               onPress={actions.togglePlayed.onPress}
+            />
+          )}
+          {actions.removeFromContinueWatching && (
+            <Link.MenuAction
+              title={actions.removeFromContinueWatching.title}
+              icon="xmark.circle"
+              destructive
+              onPress={actions.removeFromContinueWatching.onPress}
             />
           )}
         </Link.Menu>

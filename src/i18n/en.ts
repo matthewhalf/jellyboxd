@@ -87,6 +87,7 @@ export const en = {
     goToSeries: "Go to series",
     markWatched: "Mark as watched",
     markUnwatched: "Mark as unwatched",
+    removeFromContinueWatching: "Remove from Continue Watching",
   },
   player: {
     failedTitle: "Playback failed",

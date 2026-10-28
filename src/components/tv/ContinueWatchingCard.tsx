@@ -121,7 +121,7 @@ export function ContinueWatchingCard({
         transform: [{ translateX }, { scale: reorderScale }],
       }}
     >
-      <MediaLink item={item} session={session} onRefresh={onRefresh} playOnPress>
+      <MediaLink item={item} session={session} onRefresh={onRefresh} playOnPress continueWatching>
         <Animated.View style={{ opacity: contentFade }}>
           <View style={[styles.artwork, { width, height: (width * 9) / 16 }]}>
             <Image

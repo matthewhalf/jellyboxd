@@ -129,7 +129,12 @@ const STORAGE_KEYS = {
   SAVED_SERVERS: "jellyboxd_saved_servers",
   /** One key per saved server: the saved-servers blob would otherwise outgrow SecureStore's value size limit. */
   PASSWORD_PREFIX: "jellyboxd_pw_",
+  /** One key per user: continue watching entries removed by hand (Jellyfin can't hide Next Up). */
+  HIDDEN_CONTINUE_WATCHING_PREFIX: "jellyboxd_cw_hidden_",
 };
+
+/** Removed continue watching entries kept on the device; older ones are dropped first. */
+const MAX_HIDDEN_CONTINUE_WATCHING = 40;
 
 /** The stored token was rejected by the server: the user has to log in again. */
 export class SessionExpiredError extends Error {
@@ -597,7 +602,12 @@ export class JellyfinService {
    * series, one card per series, ordered so the most recently watched series comes first.
    */
   static async fetchContinueWatching(session: JellyfinSession): Promise<JellyfinItem[]> {
-    if (isDemoServerUrl(session.serverUrl)) return demoBackend.continueWatching();
+    const hidden = await this.getHiddenContinueWatching(session);
+    if (isDemoServerUrl(session.serverUrl)) {
+      return this.withoutHidden(demoBackend.continueWatching(), hidden, (item) =>
+        item.UserData?.LastPlayedDate ? Date.parse(item.UserData.LastPlayedDate) : 0
+      );
+    }
     const [resume, nextUp, lastPlayed] = await Promise.all([
       this.fetchResumeItems(session),
       this.fetchNextUp(session, 20),
@@ -616,10 +626,58 @@ export class JellyfinService {
       return Math.max(own, lastPlayed.get(item.SeriesId || item.Id) ?? 0);
     };
     // Stable sort: items without any play date keep Jellyfin's order at the end
-    return [...resume, ...upcoming]
+    const sorted = [...resume, ...upcoming]
       .map((item, index) => ({ item, index, time: recency(item) }))
       .sort((a, b) => b.time - a.time || a.index - b.index)
       .map(({ item }) => item);
+    return this.withoutHidden(sorted, hidden, recency);
+  }
+
+  /** Drops removed entries, until the series (or movie) is played again after the removal. */
+  private static withoutHidden(
+    items: JellyfinItem[],
+    hidden: Record<string, number>,
+    recency: (item: JellyfinItem) => number
+  ): JellyfinItem[] {
+    return items.filter((item) => {
+      const hiddenAt = hidden[item.SeriesId || item.Id];
+      return !hiddenAt || recency(item) > hiddenAt;
+    });
+  }
+
+  private static hiddenContinueWatchingKey(session: JellyfinSession): string {
+    // SecureStore keys only allow alphanumerics, ".", "-" and "_"
+    return STORAGE_KEYS.HIDDEN_CONTINUE_WATCHING_PREFIX + session.userId.replace(/[^\w.-]/g, "_");
+  }
+
+  private static async getHiddenContinueWatching(session: JellyfinSession): Promise<Record<string, number>> {
+    try {
+      const stored = await SecureStore.getItemAsync(this.hiddenContinueWatchingKey(session));
+      return stored ? JSON.parse(stored) : {};
+    } catch {
+      return {};
+    }
+  }
+
+  /**
+   * Removes an item from continue watching: a whole series for episodes, since its Next Up
+   * episode would otherwise take the card's place. Its resume position is kept on the server.
+   */
+  static async hideFromContinueWatching(session: JellyfinSession, item: JellyfinItem): Promise<boolean> {
+    try {
+      const hidden = await this.getHiddenContinueWatching(session);
+      hidden[item.SeriesId || item.Id] = Date.now();
+      const kept = Object.entries(hidden)
+        .sort(([, a], [, b]) => b - a)
+        .slice(0, MAX_HIDDEN_CONTINUE_WATCHING);
+      await SecureStore.setItemAsync(
+        this.hiddenContinueWatchingKey(session),
+        JSON.stringify(Object.fromEntries(kept))
+      );
+      return true;
+    } catch {
+      return false;
+    }
   }
 
   static getStreamUrl(
