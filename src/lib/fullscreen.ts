@@ -1,8 +1,12 @@
-/** Pause between fullscreen attempts, long enough for the presentation to report itself. */
-const RETRY_DELAYS_MS = [150, 250, 400];
+/**
+ * Pause before the single fallback attempt. AVKit holds the presentation back until the app's
+ * rotation to landscape has finished, so a shorter wait would queue a second presentation and
+ * play the fullscreen animation twice.
+ */
+const RETRY_DELAYS_MS = [1500];
 
 /**
- * Asks the native player to go fullscreen, retrying while the view isn't attached to the window yet.
+ * Asks the native player to go fullscreen, trying once more later if the first request was lost.
  *
  * expo-video's enterFullscreen() has no "already presenting" guard and resolves whether or not
  * the presentation started. Attempts therefore run strictly one after the other: a second call

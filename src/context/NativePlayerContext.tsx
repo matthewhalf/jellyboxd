@@ -153,7 +153,7 @@ export function NativePlayerProvider({ children }: { children: React.ReactNode }
       player.play();
       JellyfinService.reportPlaybackStart(session, itemId);
 
-      // Retried because the presentation may not start on the first attempt
+      // One request, plus a late fallback in case it was lost (see enterFullscreenWithRetry)
       enterFullscreenWithRetry(
         () => viewRef.current?.enterFullscreen(),
         () => !activeRef.current || isFullscreenRef.current || sessionIdRef.current !== sessionId

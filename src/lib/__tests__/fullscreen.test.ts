@@ -25,10 +25,22 @@ describe("enterFullscreenWithRetry", () => {
     expect(enter).toHaveBeenCalledTimes(1);
   });
 
-  it("retries while the view isn't attached, then gives up", async () => {
+  it("tries once more if the first request was lost, then gives up", async () => {
     const enter = jest.fn(() => undefined);
     await enterFullscreenWithRetry(enter, () => false, noWait);
-    expect(enter).toHaveBeenCalledTimes(4);
+    expect(enter).toHaveBeenCalledTimes(2);
+  });
+
+  it("waits long enough for the rotation to finish before trying again", async () => {
+    const waits: number[] = [];
+    await enterFullscreenWithRetry(
+      () => undefined,
+      () => false,
+      async (ms) => {
+        waits.push(ms);
+      }
+    );
+    expect(Math.min(...waits)).toBeGreaterThanOrEqual(1000);
   });
 
   it("keeps going after a rejected attempt", async () => {
