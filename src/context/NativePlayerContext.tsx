@@ -58,24 +58,38 @@ function buildMetadata(session: JellyfinSession, item: JellyfinItem) {
 
 /**
  * Hosts a single off-screen VideoView at the app root. Starting playback goes
- * straight into the native fullscreen player; dismissing it tears the player
- * down in place, so there is no intermediate React screen to transition through.
+ * straight into the native fullscreen player; dismissing it stops playback in
+ * place, so there is no intermediate React screen to transition through.
+ *
+ * The view and its player live as long as the app and each session only swaps
+ * the source. On iOS 27 AVKit crashes while loading the native controls of an
+ * AVPlayerViewController created after a previous one was torn down, so a new
+ * view per session crashed on the second video.
  */
 export function NativePlayerProvider({ children }: { children: React.ReactNode }) {
   const { session } = useAuth();
   const { t } = useTranslation();
-  // Read from native event handlers, which subscribe once per player
+  // Read from native event handlers, which subscribe once
   const tRef = useRef(t);
   useEffect(() => {
     tRef.current = t;
   });
   const viewRef = useRef<VideoView>(null);
-  const [player, setPlayer] = useState<VideoPlayer | null>(null);
+  const [player] = useState<VideoPlayer>(() => {
+    const p = createVideoPlayer(null);
+    p.loop = false;
+    p.timeUpdateEventInterval = 1;
+    p.allowsExternalPlayback = true;
+    return p;
+  });
+  // Mutated from callbacks, which may not modify render values
+  const playerRef = useRef(player);
   const [isPreparing, setIsPreparing] = useState(false);
   const [playbackVersion, setPlaybackVersion] = useState(0);
 
   // Per-session playback state, read from native event handlers
-  const playerRef = useRef<VideoPlayer | null>(null);
+  const activeRef = useRef(false);
+  const sessionIdRef = useRef(0);
   const sessionRef = useRef<JellyfinSession | null>(null);
   const itemRef = useRef<JellyfinItem | null>(null);
   const resumeTicksRef = useRef(0);
@@ -93,9 +107,10 @@ export function NativePlayerProvider({ children }: { children: React.ReactNode }
   }, []);
 
   const play = async (itemId: string) => {
-    if (!session || playerRef.current || isPreparing) return;
+    if (!session || activeRef.current || isPreparing) return;
     haptics.medium();
     setIsPreparing(true);
+    const player = playerRef.current;
     try {
       const [item, bitrate] = await Promise.all([
         JellyfinService.fetchItemDetails(session, itemId),
@@ -113,13 +128,7 @@ export function NativePlayerProvider({ children }: { children: React.ReactNode }
         maxStreamingBitrate: bitrate,
       });
 
-      const newPlayer = createVideoPlayer({ uri, metadata: buildMetadata(session, item) });
-      newPlayer.loop = false;
-      newPlayer.timeUpdateEventInterval = 1;
-      newPlayer.staysActiveInBackground = true;
-      newPlayer.showNowPlayingNotification = true;
-      newPlayer.allowsExternalPlayback = true;
-
+      const sessionId = ++sessionIdRef.current;
       sessionRef.current = session;
       itemRef.current = item;
       resumeTicksRef.current = item.UserData?.PlaybackPositionTicks || 0;
@@ -130,17 +139,29 @@ export function NativePlayerProvider({ children }: { children: React.ReactNode }
       isPipRef.current = false;
       endedRef.current = false;
       finishingRef.current = false;
-      playerRef.current = newPlayer;
+      activeRef.current = true;
+
+      player.staysActiveInBackground = true;
+      player.showNowPlayingNotification = true;
+      await player.replaceAsync({ uri, metadata: buildMetadata(session, item) });
 
       // Rotate the app itself before the native player is presented: once
       // AVPlayerViewController is on screen iOS accepts the lock but won't rotate
       // unless the device is turned, which never happens with rotation lock on
       await ScreenOrientation.lockAsync(ScreenOrientation.OrientationLock.LANDSCAPE).catch(() => {});
 
-      setPlayer(newPlayer);
-      newPlayer.play();
+      player.play();
       JellyfinService.reportPlaybackStart(session, itemId);
+
+      // Retried because the presentation may not start on the first attempt
+      enterFullscreenWithRetry(
+        () => viewRef.current?.enterFullscreen(),
+        () => !activeRef.current || isFullscreenRef.current || sessionIdRef.current !== sessionId
+      );
     } catch (e) {
+      activeRef.current = false;
+      player.pause();
+      player.replaceAsync(null).catch(() => {});
       ScreenOrientation.lockAsync(ScreenOrientation.OrientationLock.PORTRAIT_UP).catch(() => {});
       console.error("Errore avvio riproduzione:", e);
       Alert.alert(t("player.failedTitle"), t("player.failedMessage"));
@@ -149,28 +170,28 @@ export function NativePlayerProvider({ children }: { children: React.ReactNode }
     }
   };
 
-  /** Stops playback, reports the final position to Jellyfin and unmounts the player. */
+  /** Stops playback, reports the final position to Jellyfin and clears the player. */
   const finish = async () => {
-    const p = playerRef.current;
     const s = sessionRef.current;
     const item = itemRef.current;
-    if (!p || finishingRef.current) return;
+    const player = playerRef.current;
+    if (!activeRef.current || finishingRef.current) return;
     finishingRef.current = true;
 
     let currentSec = 0;
     let durationSec = 0;
     try {
-      p.pause();
-      currentSec = p.currentTime || 0;
-      durationSec = p.duration || 0;
+      player.pause();
+      currentSec = player.currentTime || 0;
+      durationSec = player.duration || 0;
     } catch {}
 
-    playerRef.current = null;
-    setPlayer(null);
+    activeRef.current = false;
+    player.showNowPlayingNotification = false;
+    player.staysActiveInBackground = false;
+    player.replaceAsync(null).catch(() => {});
     // Also covers sessions that end without a fullscreen exit event
     ScreenOrientation.lockAsync(ScreenOrientation.OrientationLock.PORTRAIT_UP).catch(() => {});
-    // Let the VideoView unmount before freeing the native player
-    setTimeout(() => p.release(), 500);
 
     if (s && item) {
       const totalSec = (item.RunTimeTicks ? item.RunTimeTicks / TICKS_PER_SECOND : 0) || durationSec;
@@ -191,13 +212,18 @@ export function NativePlayerProvider({ children }: { children: React.ReactNode }
     }
     setPlaybackVersion((v) => v + 1);
   };
-
-  // Native event subscriptions for the active player
+  // Native event handlers subscribe once and always call the latest `finish`
+  const finishRef = useRef(finish);
   useEffect(() => {
-    if (!player) return;
+    finishRef.current = finish;
+  });
+
+  // Native event subscriptions, for the lifetime of the player
+  useEffect(() => {
+    const finish = () => finishRef.current();
 
     const seekToResume = () => {
-      if (hasSeekedRef.current) return;
+      if (!activeRef.current || hasSeekedRef.current) return;
       hasSeekedRef.current = true;
       const resumeSec = resumeTicksRef.current / TICKS_PER_SECOND;
       if (resumeSec > 10) {
@@ -210,6 +236,7 @@ export function NativePlayerProvider({ children }: { children: React.ReactNode }
     const subscriptions = [
       player.addListener("sourceLoad", seekToResume),
       player.addListener("statusChange", ({ status, error }) => {
+        if (!activeRef.current) return;
         if (status === "readyToPlay") seekToResume();
         if (status === "error" && !finishingRef.current) {
           // e.g. the server's transcode failed: close the player instead of leaving it stuck
@@ -225,7 +252,7 @@ export function NativePlayerProvider({ children }: { children: React.ReactNode }
       player.addListener("timeUpdate", ({ currentTime }) => {
         const s = sessionRef.current;
         const item = itemRef.current;
-        if (!s || !item || currentTime <= 0 || !hasSeekedRef.current) return;
+        if (!activeRef.current || !s || !item || currentTime <= 0 || !hasSeekedRef.current) return;
         const ticks = Math.round(currentTime * TICKS_PER_SECOND);
         lastTicksRef.current = ticks;
         if (Math.abs(ticks - lastSyncedTicksRef.current) >= SYNC_INTERVAL_TICKS) {
@@ -236,13 +263,15 @@ export function NativePlayerProvider({ children }: { children: React.ReactNode }
       player.addListener("playingChange", ({ isPlaying }) => {
         const s = sessionRef.current;
         const item = itemRef.current;
+        if (!activeRef.current || !s || !item) return;
         const ticks = Math.round((player.currentTime || 0) * TICKS_PER_SECOND);
-        if (!s || !item || ticks <= 0) return;
+        if (ticks <= 0) return;
         lastTicksRef.current = ticks;
         lastSyncedTicksRef.current = ticks;
         JellyfinService.reportPlaybackProgress(s, item.Id, ticks, !isPlaying);
       }),
       player.addListener("playToEnd", () => {
+        if (!activeRef.current) return;
         endedRef.current = true;
         if (isFullscreenRef.current) {
           viewRef.current?.exitFullscreen().catch(finish);
@@ -252,66 +281,53 @@ export function NativePlayerProvider({ children }: { children: React.ReactNode }
       }),
     ];
 
-    // Present fullscreen as soon as the view is mounted; retried because the
-    // native view may not be attached to the window on the first frame.
-    let cancelled = false;
-    enterFullscreenWithRetry(
-      () => viewRef.current?.enterFullscreen(),
-      () => cancelled || isFullscreenRef.current || playerRef.current !== player
-    );
-
-    return () => {
-      subscriptions.forEach((sub) => sub.remove());
-      cancelled = true;
-    };
+    return () => subscriptions.forEach((sub) => sub.remove());
   }, [player]);
 
   return (
     <NativePlayerContext.Provider value={{ play, playbackVersion }}>
       {children}
 
-      {player && (
-        <VideoView
-          ref={viewRef}
-          player={player}
-          style={styles.hostView}
-          pointerEvents="none"
-          nativeControls
-          showsTimecodes
-          allowsPictureInPicture
-          startsPictureInPictureAutomatically
-          contentFit="contain"
-          fullscreenOptions={{ enable: true, orientation: "landscape", autoExitOnRotate: false }}
-          onFullscreenEnter={() => {
-            isFullscreenRef.current = true;
-            ScreenOrientation.lockAsync(ScreenOrientation.OrientationLock.LANDSCAPE).catch(() => {});
-          }}
-          onFullscreenExit={() => {
-            isFullscreenRef.current = false;
-            // Force a rotation back to portrait: the phone is typically still held
-            // landscape when the player closes, and otherwise the app would stay there.
-            // A single lock (no follow-up unlock) is enough — the next video's own
-            // onFullscreenEnter re-locks LANDSCAPE regardless of this lock's state.
-            ScreenOrientation.lockAsync(ScreenOrientation.OrientationLock.PORTRAIT_UP).catch(() => {});
-            // Keep playing while in Picture in Picture or AirPlay
-            if (isPipRef.current || playerRef.current?.isExternalPlaybackActive) return;
+      <VideoView
+        ref={viewRef}
+        player={player}
+        style={styles.hostView}
+        pointerEvents="none"
+        nativeControls
+        showsTimecodes
+        allowsPictureInPicture
+        startsPictureInPictureAutomatically
+        contentFit="contain"
+        fullscreenOptions={{ enable: true, orientation: "landscape", autoExitOnRotate: false }}
+        onFullscreenEnter={() => {
+          isFullscreenRef.current = true;
+          ScreenOrientation.lockAsync(ScreenOrientation.OrientationLock.LANDSCAPE).catch(() => {});
+        }}
+        onFullscreenExit={() => {
+          isFullscreenRef.current = false;
+          // Force a rotation back to portrait: the phone is typically still held
+          // landscape when the player closes, and otherwise the app would stay there.
+          // A single lock (no follow-up unlock) is enough — the next video's own
+          // onFullscreenEnter re-locks LANDSCAPE regardless of this lock's state.
+          ScreenOrientation.lockAsync(ScreenOrientation.OrientationLock.PORTRAIT_UP).catch(() => {});
+          // Keep playing while in Picture in Picture or AirPlay
+          if (isPipRef.current || playerRef.current.isExternalPlaybackActive) return;
+          finish();
+        }}
+        onPictureInPictureStart={() => {
+          isPipRef.current = true;
+        }}
+        onPictureInPictureStop={() => {
+          isPipRef.current = false;
+          if (isFullscreenRef.current) return;
+          // "Restore" keeps playing → back to fullscreen; closing PiP pauses → done
+          if (playerRef.current.playing) {
+            viewRef.current?.enterFullscreen().catch(finish);
+          } else {
             finish();
-          }}
-          onPictureInPictureStart={() => {
-            isPipRef.current = true;
-          }}
-          onPictureInPictureStop={() => {
-            isPipRef.current = false;
-            if (isFullscreenRef.current) return;
-            // "Restore" keeps playing → back to fullscreen; closing PiP pauses → done
-            if (playerRef.current?.playing) {
-              viewRef.current?.enterFullscreen().catch(finish);
-            } else {
-              finish();
-            }
-          }}
-        />
-      )}
+          }
+        }}
+      />
 
       {isPreparing && (
         <View style={styles.preparingOverlay} pointerEvents="none">
