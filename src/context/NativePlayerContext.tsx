@@ -300,15 +300,17 @@ export function NativePlayerProvider({ children }: { children: React.ReactNode }
         contentFit="contain"
         fullscreenOptions={{ enable: true, orientation: "landscape", autoExitOnRotate: false }}
         onFullscreenEnter={() => {
+          // No orientation lock here: play() already rotated the app, and a second
+          // LANDSCAPE lock while that rotation is still running can pick the other
+          // landscape side and flip the player by 180°.
           isFullscreenRef.current = true;
-          ScreenOrientation.lockAsync(ScreenOrientation.OrientationLock.LANDSCAPE).catch(() => {});
         }}
         onFullscreenExit={() => {
           isFullscreenRef.current = false;
           // Force a rotation back to portrait: the phone is typically still held
           // landscape when the player closes, and otherwise the app would stay there.
-          // A single lock (no follow-up unlock) is enough — the next video's own
-          // onFullscreenEnter re-locks LANDSCAPE regardless of this lock's state.
+          // A single lock (no follow-up unlock) is enough — the next video's play()
+          // re-locks LANDSCAPE before presenting.
           ScreenOrientation.lockAsync(ScreenOrientation.OrientationLock.PORTRAIT_UP).catch(() => {});
           // Keep playing while in Picture in Picture or AirPlay
           if (isPipRef.current || playerRef.current.isExternalPlaybackActive) return;
@@ -322,7 +324,11 @@ export function NativePlayerProvider({ children }: { children: React.ReactNode }
           if (isFullscreenRef.current) return;
           // "Restore" keeps playing → back to fullscreen; closing PiP pauses → done
           if (playerRef.current.playing) {
-            viewRef.current?.enterFullscreen().catch(finish);
+            // The app went back to portrait when fullscreen closed for PiP
+            ScreenOrientation.lockAsync(ScreenOrientation.OrientationLock.LANDSCAPE)
+              .catch(() => {})
+              .then(() => viewRef.current?.enterFullscreen())
+              .catch(finish);
           } else {
             finish();
           }
